@@ -160,6 +160,12 @@ var SirDavidLocal = (() => {
     async status(signal) {
       return this.#request("/__agents/status?provider=claude&kind=sir-david", { signal });
     }
+    async workspace(signal) {
+      return this.#request("/__agents/workspace", { signal });
+    }
+    async undo(changeId, expectedVersion, signal) {
+      return this.#request("/__agents/workspace/undo", { body: { changeId, expectedVersion }, signal });
+    }
     async disconnect() {
       const token = this.#token;
       this.#generation++;
@@ -170,7 +176,7 @@ var SirDavidLocal = (() => {
       if (token) await this.#request("/__agents/disconnect", { token, body: {} }).catch(() => {
       });
     }
-    async answer(prepared, { signal, model = "", effort = "" } = {}) {
+    async answer(prepared, { signal, model = "", effort = "", workspace = false } = {}) {
       if (this.#active) throw Error("Claude arbetar redan.");
       const request = localRequest(prepared, this.now()), turn = { ...prepared.turn }, generation = this.#generation, token = this.#token;
       const controller = new AbortController();
@@ -181,6 +187,10 @@ var SirDavidLocal = (() => {
         const status = await this.status(combined), claude = status.providers?.find((item) => item.id === "claude");
         if (!claude?.installed || !claude.signedIn) throw Error("Logga in i Claude Code p\xE5 datorn.");
         if (claude.billingMode !== "subscription") throw Error("Bryggan m\xE5ste bekr\xE4fta Claude-abonnemanget f\xF6re aktivering.");
+        if (workspace) {
+          if (claude.workspace?.enabled !== true) throw Error("Anslut igen och godk\xE4nn arbetsmappens fil\xE5tkomst.");
+          request.workspace = true;
+        }
         if (model || effort) {
           const choice = claude.models?.find((item) => item.id === model);
           if (!choice || effort && !choice.efforts?.includes(effort)) throw Error("V\xE4lj en tillg\xE4nglig Claude-modell och niv\xE5.");

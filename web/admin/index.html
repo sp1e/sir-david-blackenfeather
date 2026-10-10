@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="robots" content="noindex,nofollow"><title>Sir David · sp1e</title>
-  <link rel="stylesheet" href="/admin/sir-david.css?v=audio-1">
-  <script src="/admin/claude-adapter.js?v=claude-2" defer></script>
-  <script src="/admin/sir-david.js?v=claude-2" defer></script>
+  <link rel="stylesheet" href="/admin/sir-david.css?v=files-1">
+  <script src="/admin/claude-adapter.js?v=files-1" defer></script>
+  <script src="/admin/sir-david.js?v=files-1" defer></script>
 </head>
 <body>
   <header><a class="pill" href="/" aria-label="Till startsidan">← sp1e</a><span class="eyebrow">Ditt privata rum</span><button id="new-chat" class="pill" type="button" disabled hidden>Rensa samtalet</button></header>
@@ -25,9 +25,10 @@
       <div id="messages" role="log" aria-live="polite" aria-relevant="additions"></div>
       <form id="chat-form"><label class="sr-only" for="prompt">Meddelande till Sir David</label><div class="composer"><textarea id="prompt" rows="2" maxlength="4000" placeholder="Skriv till Sir David…" required></textarea><button id="send" class="circle" aria-label="Skicka" disabled>↑</button></div>
         <div class="options"><label class="sr-only" for="provider">Motor</label><select id="provider" aria-label="Motor" disabled><option value="cloud">Ollama Cloud</option><option value="claude">Claude Code · lokal</option></select><select id="model" disabled aria-label="Modell"></select><button id="stop-chat" class="pill" type="button" hidden>Avbryt svar</button><span class="subtle">Senaste samtalet delas med ditt skrivbord.</span><button id="reload-chat" class="pill" type="button">Läs in samtalet</button></div>
-        <div id="claude-options" class="options" hidden><button id="connect-claude" class="pill" type="button">Anslut Claude</button><label class="sr-only" for="claude-model">Claude-modell</label><select id="claude-model" aria-label="Claude-modell" disabled><option value="">Claudes standardmodell</option></select><label class="sr-only" for="claude-effort">Resonemang</label><select id="claude-effort" aria-label="Resonemang" disabled><option value="">Standardnivå</option></select><a class="pill" href="/assets/setup/sp1e-local-agents.zip">Hämta anslutningen</a><p id="claude-note" class="subtle">Använder din Claude-inloggning och dess användningsgränser. Datorn behöver vara igång.</p><p class="subtle">Starta den lokala anslutningen först. Uppdatera och starta om den om din inloggning inte kan verifieras. Filer och datorstyrning är avstängda.</p></div>
+        <div id="claude-options" class="options" hidden><button id="connect-claude" class="pill" type="button">Anslut Claude</button><label class="sr-only" for="claude-model">Claude-modell</label><select id="claude-model" aria-label="Claude-modell" disabled><option value="">Claudes standardmodell</option></select><label class="sr-only" for="claude-effort">Resonemang</label><select id="claude-effort" aria-label="Resonemang" disabled><option value="">Standardnivå</option></select><a class="pill" href="/assets/setup/sp1e-local-agents.zip">Hämta anslutningen</a><p id="claude-note" class="subtle">Använder din Claude-inloggning och dess användningsgränser. Datorn behöver vara igång.</p><label class="subtle"><input id="files-mode" type="checkbox" disabled> Arbeta med filer i min arbetsmapp</label><p id="workspace-note" class="subtle">Anslut Claude och godkänn filåtkomst i det lokala fönstret. Webbsurf och datorstyrning är nästa steg.</p></div>
       </form><button id="stop-speech" class="pill" type="button" hidden>Stoppa rösten</button><p id="status" class="subtle" role="status" aria-live="polite"></p>
     </section>
+    <details id="file-panel" class="glass" hidden><summary>Filhistorik</summary><p class="subtle">Genomförda ändringar sparas lokalt. Återställning skyddar filer som du hunnit ändra. Ett avbrutet uppdrag kan redan ha genomfört en ändring.</p><button id="reload-files" class="pill" type="button">Läs in filhistoriken</button><ul id="file-activity"></ul><p id="file-status" class="subtle" role="status"></p></details>
     <details id="memory-panel" class="glass"><summary>Det jag minns <span id="memory-count">0</span></summary>
       <p class="subtle">Samma minne här och i skrivbordsprogrammet. Bara anteckningar du själv sparar följer med till nästa samtal.</p>
       <form id="memory-form"><label for="memory-text">Vad vill du att jag ska minnas?</label><textarea id="memory-text" rows="2" maxlength="1000" required></textarea><button id="save-memory" class="pill" disabled>Spara i minnet</button></form>

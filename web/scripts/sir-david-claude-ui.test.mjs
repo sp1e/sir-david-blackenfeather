@@ -22,7 +22,9 @@ async function fixture(t,options={}){
     if(String(url).startsWith('http://127.0.0.1:4318/')){
       const path=new URL(url).pathname,body=init.body?JSON.parse(init.body):undefined;
       local.push({url:String(url),path,body,init});
-      if(path.endsWith('/status'))return json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:options.unverified?'unverified':'subscription',models}]});
+      if(path.endsWith('/status'))return json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:options.unverified?'unverified':'subscription',models,...(options.workspace?{workspace:{enabled:true,name:'Sir David-arbetsmapp'}}:{})}]});
+      if(path==='/__agents/workspace')return json({enabled:true,name:'Sir David-arbetsmapp',activity:options.activity??[]});
+      if(path==='/__agents/workspace/undo')return options.undo?options.undo():json({action:'undo',version:'b'.repeat(64)});
       if(path.endsWith('/jobs'))return json({id:'job_123456789',state:'running'},202);
       if(path.includes('/jobs/'))return options.poll?options.poll():json({state:'done',result:{text:'A distinguished reply.'}});
       if(path.endsWith('/cancel'))return json({cancelled:true});
@@ -32,7 +34,7 @@ async function fixture(t,options={}){
     const path=String(url).replace('/api/sir-david/',''),body=init.body?JSON.parse(init.body):undefined;
     site.push({path,body,init});
     if(path==='profile')return json({profile:{displayName:'Sir David Blackenfeather'},models:['gemma4:31b'],chatConnected:true,speechConnected:true,preferences:{autoSpeak:options.sound!==false,version:0}});
-    if(path==='preferences')return json({preferences:{autoSpeak:options.sound!==false,version:0}});
+    if(path==='preferences')return options.preferencesUnauthorized?json({error:'Logga in först'},401):json({preferences:{autoSpeak:options.sound!==false,version:0}});
     if(path==='chat')return json({conversation:{version:3,messages:[{role:'user',content:body.text},{role:'assistant',content:'Cloud preview reply.'}]}});
     if(path==='conversation')return json({conversation});
     if(path==='memories')return json({memories:[{id:turnId,content:'A saved note'}]});
@@ -71,6 +73,35 @@ test('local Claude commits to shared history and uses the same automatic speech 
   assert.deepEqual(f.site.find(item=>item.path==='local/prepare').body,{text:'Hello',version:2,provider:'claude'});
   assert.deepEqual(f.site.find(item=>item.path==='local/commit').body,{turnId,version:2,text:'A distinguished reply.'});
   assert.equal(f.site.some(item=>item.path==='chat'),false);assert.ok(f.$('messages').textContent.includes('A distinguished reply.'));
+});
+
+test('workspace mode uses explicit scope and retains the shared commit and voice route',async t=>{
+  const f=await fixture(t,{workspace:true});await f.pair();
+  assert.equal(f.$('files-mode').disabled,false);assert.equal(f.$('file-panel').hidden,false);
+  f.$('files-mode').checked=true;f.submit('Create a note');await until(()=>f.plays.length===1);
+  assert.equal(f.local.find(item=>item.path.endsWith('/jobs')).body.workspace,true);
+  assert.ok(f.site.some(item=>item.path==='local/commit'));assert.ok(f.site.some(item=>item.path==='speech'));
+});
+test('revoked workspace scope stops before prepare instead of falling back to chat',async t=>{
+  const options={workspace:true},f=await fixture(t,options);await f.pair();f.$('files-mode').checked=true;
+  options.workspace=false;f.submit('Edit the file');await until(()=>f.$('status').textContent.includes('Filåtkomsten'));
+  assert.equal(f.site.some(item=>item.path==='local/prepare'),false);assert.equal(f.local.some(item=>item.path.endsWith('/jobs')),false);
+  assert.equal(f.$('prompt').value,'Edit the file');
+});
+test('file history uses text rendering and revision-checked undo',async t=>{
+  const id='1791673000000000000-'+'a'.repeat(32),version='a'.repeat(64);
+  const f=await fixture(t,{workspace:true,activity:[{id,path:'<img src=x onerror=alert(1)>',afterVersion:version}]});await f.pair();
+  await until(()=>f.$('file-activity').querySelector('button'));
+  assert.equal(f.$('file-activity').querySelector('img'),null);
+  assert.match(f.$('file-activity').textContent,/<img/);
+  f.$('file-activity').querySelector('button').click();await until(()=>f.$('file-status').textContent.includes('återställd'));
+  assert.deepEqual(f.local.find(item=>item.path.endsWith('/workspace/undo')).body,{changeId:id,expectedVersion:version});
+});
+test('lost Admin authentication clears local history and blocks undo',async t=>{
+  const options={workspace:true,activity:[{id:'1791673000000000000-'+'a'.repeat(32),path:'private-note.txt',afterVersion:'a'.repeat(64)}]},f=await fixture(t,options);await f.pair();
+  await until(()=>f.$('file-activity').querySelector('button'));options.preferencesUnauthorized=true;
+  f.$('file-activity').querySelector('button').click();await until(()=>f.$('file-panel').hidden);
+  assert.equal(f.$('file-activity').textContent,'');assert.equal(f.local.some(item=>item.path.endsWith('/workspace/undo')),false);
 });
 test('unverified subscription stops before prepare or model work and asks to update companion',async t=>{
   const f=await fixture(t,{unverified:true});await f.pair();
