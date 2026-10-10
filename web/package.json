@@ -1,0 +1,20 @@
+{
+  "name": "sir-david-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "test": "node --test scripts/sir-david.test.mjs scripts/sir-david-ui.test.mjs",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "build": "esbuild src/site/sir-david-api.ts --bundle --format=esm --platform=neutral --outfile=build/sir-david-api.js"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1",
+    "esbuild": "0.24.2",
+    "typescript": "5.9.3",
+    "@cloudflare/workers-types": "4.20260702.1"
+  }
+}

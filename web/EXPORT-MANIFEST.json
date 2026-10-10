@@ -1,0 +1,98 @@
+{
+  "sourceRepository": "https://github.com/sp1e/sp1e.se",
+  "sourceCommit": "69a9f357101a391677dc0753aeb94ffde75db61e",
+  "adaptations": [
+    "API tests omit two host middleware/login integration cases; original cases stay in sp1e.se.",
+    "schema.sql contains only the sessions fixture prerequisite; no unrelated application tables."
+  ],
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "fb2e77ae041a7c088d6d520c69852a56b1042ff457838623b3e7bf4dc0589067"
+    },
+    {
+      "path": "admin/assets/raven-idle.png",
+      "sha256": "de25762da9c68c600ddf9e1efabd8793792060619c6dcc14f7a8f5dd5c414bc7"
+    },
+    {
+      "path": "admin/index.html",
+      "sha256": "3a787ca363fe19c41f396d0a1c08b171972ea9f5426daadc4b8424fe9a384f8f"
+    },
+    {
+      "path": "admin/sir-david.css",
+      "sha256": "74fbf2f747338934a64a7cec9cadd432861ab204e46e7bf00f4434a7f644f0b2"
+    },
+    {
+      "path": "admin/sir-david.js",
+      "sha256": "f86de9822f2eebc1aa6836df61bacbcec9331981801fb5e3dddc09627a4221ff"
+    },
+    {
+      "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
+      "sha256": "9634fefbc2f4634d232845b8cb6d35288e8fa83f8eccddfbca7d4a34dd9fffb6"
+    },
+    {
+      "path": "functions/api/sir-david/[[route]].ts",
+      "sha256": "de98b97d5ecbdcd8e71c47204868220b08802cc9756b6d34c44b9172e019e561"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "0a5ed92f2d2535ed123b6dc581b9f177d8d3f15d8964e057b6ed85e4107eef32"
+    },
+    {
+      "path": "package.json",
+      "sha256": "f7c2590a4b74efc64a41c1d3bc306677b5b020245320ccd1e72ef2762adb2dc1"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c996235b1c1d9b017da5a485df3baeddddb288ab8c6dac3f20098b1b3346e2ec"
+    },
+    {
+      "path": "schema.sql",
+      "sha256": "449b731170f7542181a331576034d350122827aa170cfd34a87c01cf6852afb3"
+    },
+    {
+      "path": "scripts/sir-david-ui.test.mjs",
+      "sha256": "d390ab526d0eae6ebd2e2f8930347e25c9c95e2c3c885a26b913d9abce2e5d9d"
+    },
+    {
+      "path": "scripts/sir-david.test.mjs",
+      "sha256": "8a32d37a7ff97187dac24ad4b775ae0d16e0a767dca656b45ed5801f660b6b05"
+    },
+    {
+      "path": "site-migration-002-auth-throttle.sql",
+      "sha256": "c5d2a7b9e1f456ca401554085d32e74117ef782ceb2dad001e56eaa0d2b2aa32"
+    },
+    {
+      "path": "site-migration-003-portal.sql",
+      "sha256": "aaab7b7844595df02944382aaac909b7ff61f21379c8fb7ce8a4efd465d79cc5"
+    },
+    {
+      "path": "site-migration-005-sir-david.sql",
+      "sha256": "b49cd3d57adade31ce64e9a08e259959cc27b0d1502233716358652cbc9b22f2"
+    },
+    {
+      "path": "src/site/portal-policy.ts",
+      "sha256": "79d5bb89bba01dbd59f6ae962e33cca3ab615878a80b000ae91e22ae659ee340"
+    },
+    {
+      "path": "src/site/portal-session.ts",
+      "sha256": "9c54f91dcdc661107d5bbaff1f5d2b4b802300711bf688916e1c5f455e801443"
+    },
+    {
+      "path": "src/site/sir-david-api.ts",
+      "sha256": "ad96cfd9bcc129e786d01b48e3cb880fe325e8892d2900d2fd479806ffa43be8"
+    },
+    {
+      "path": "tsconfig.json",
+      "sha256": "ec3ebe0fe01de4ad273a54ebd099b397ad8fd7be354083e854e508ed49333bf3"
+    }
+  ],
+  "verification": {
+    "typecheck": "passed",
+    "build": "passed",
+    "offlineTests": 29,
+    "liveInference": false,
+    "secretPatternScan": "passed",
+    "runtime": "requires host portal authentication and D1; no standalone login"
+  }
+}

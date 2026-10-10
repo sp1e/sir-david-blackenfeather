@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow"><title>Sir David · sp1e</title>
+  <link rel="stylesheet" href="/admin/sir-david.css?v=launcher-1">
+  <script src="/admin/sir-david.js?v=launcher-1" defer></script>
+</head>
+<body>
+  <header><a class="pill" href="/" aria-label="Till startsidan">← sp1e</a><span class="eyebrow">Ditt privata rum</span><button id="new-chat" class="pill" type="button" disabled hidden>Rensa samtalet</button></header>
+  <section id="admin-launcher" class="admin-launcher" aria-label="Admin">
+    <button id="open-sir-david" class="raven-launcher" type="button" aria-label="Öppna Sir David Blackenfeather" aria-controls="sir-david-panel" aria-expanded="false">
+      <svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M9 29c3-2 5-6 6-10 1-5 4-9 9-9 3 0 5 2 6 5l5 2-6 2c-1 5-5 9-11 10l-5 4 1-5-5 1Z"/><path d="m17 19 5 4-7 4m9 2-1 5m-4-4-2 4"/><circle cx="25" cy="14" r=".9" fill="currentColor" stroke="none"/></svg>
+    </button><span class="launcher-label">Sir David Blackenfeather</span>
+  </section>
+  <main id="sir-david-panel" hidden>
+    <div class="panel-toolbar"><button id="close-sir-david" class="circle" type="button" aria-label="Stäng Sir David">×</button></div>
+    <section class="companion" aria-labelledby="name">
+      <img class="raven" src="/admin/assets/raven-idle.png" alt="Sir David, din korp" width="192" height="208">
+      <p class="eyebrow">En stilla stund, Simon</p><h1 id="name">Sir David Blackenfeather</h1>
+      <p class="intro">Vad har du på tankarna?</p><p id="connection" class="subtle" role="status">Ansluter till ditt privata rum…</p>
+    </section>
+    <section class="conversation" aria-label="Konversation">
+      <div id="messages" role="log" aria-live="polite" aria-relevant="additions"></div>
+      <form id="chat-form"><label class="sr-only" for="prompt">Meddelande till Sir David</label><div class="composer"><textarea id="prompt" rows="2" maxlength="4000" placeholder="Skriv till Sir David…" required></textarea><button id="send" class="circle" aria-label="Skicka" disabled>↑</button></div>
+        <div class="options"><label for="model">Ollama Cloud</label><select id="model" disabled aria-label="Modell"></select><span class="subtle">Senaste samtalet delas med ditt skrivbord.</span><button id="reload-chat" class="pill" type="button">Läs in samtalet</button></div>
+      </form><button id="stop-speech" class="pill" type="button" hidden>Stoppa rösten</button><p id="status" class="subtle" role="status" aria-live="polite"></p>
+    </section>
+    <details id="memory-panel" class="glass"><summary>Det jag minns <span id="memory-count">0</span></summary>
+      <p class="subtle">Samma minne här och i skrivbordsprogrammet. Bara anteckningar du själv sparar följer med till nästa samtal.</p>
+      <form id="memory-form"><label for="memory-text">Vad vill du att jag ska minnas?</label><textarea id="memory-text" rows="2" maxlength="1000" required></textarea><button id="save-memory" class="pill" disabled>Spara i minnet</button></form>
+      <ul id="memories"></ul><p id="memory-status" class="subtle" role="status" aria-live="polite"></p>
+    </details>
+  </main>
+  <footer class="subtle">Privat · Admin <span id="speech-note" hidden>Rösten spelas bara när du väljer Lyssna.</span></footer>
+</body></html>

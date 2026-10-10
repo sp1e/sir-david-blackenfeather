@@ -1,0 +1,181 @@
+using System.Text.Json;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.WinForms;
+
+namespace SirDavid;
+
+internal static class Program
+{
+    public const string Name = "Sir David Blackenfeather";
+    public static string? StartupReport;
+    public static readonly string StateDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SirDavidBlackenfeather");
+    [STAThread]
+    static void Main(string[] args)
+    {
+        if (args.Length == 2 && args[0] == "--self-test")
+        {
+            SelfTest.Run(args[1]);
+            return;
+        }
+        ApplicationConfiguration.Initialize();
+        if (args.Length == 2 && args[0] == "--startup-report") StartupReport = Path.GetFullPath(args[1]);
+        try { Application.Run(new CompanionWindow()); }
+        catch { MessageBox.Show("Sir David kunde inte starta. Kontrollera installationen och försök igen.", Name, MessageBoxButtons.OK, MessageBoxIcon.Error); }
+    }
+}
+
+internal static class NavigationPolicy
+{
+    public static bool SameOrigin(string candidate) =>
+        Uri.TryCreate(candidate, UriKind.Absolute, out var uri) &&
+        uri.Scheme == Uri.UriSchemeHttps && (uri.IdnHost == "sp1e.se" || uri.IdnHost == "www.sp1e.se") && uri.Port == 443 && string.IsNullOrEmpty(uri.UserInfo);
+    public static bool ValidStart(string candidate) =>
+        SameOrigin(candidate) && Uri.TryCreate(candidate, UriKind.Absolute, out var uri) &&
+        (uri.AbsolutePath == "/admin" || uri.AbsolutePath.StartsWith("/admin/", StringComparison.Ordinal));
+}
+
+internal record AppConfig(string StartUrl)
+{
+    public static AppConfig Load(string path)
+    {
+        var json = JsonDocument.Parse(File.ReadAllText(path));
+        var url = json.RootElement.GetProperty("startUrl").GetString() ?? "";
+        if (!NavigationPolicy.ValidStart(url)) throw new InvalidDataException("Appen behöver en skyddad Admin-adress på sp1e.se.");
+        return new(url);
+    }
+}
+
+internal record WindowPreferences(int Width = 760, int Height = 860, bool AlwaysOnTop = false)
+{
+    public static WindowPreferences Load(string path)
+    {
+        try { return JsonSerializer.Deserialize<WindowPreferences>(File.ReadAllText(path)) ?? new(); }
+        catch { return new(); }
+    }
+    public void Save(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path + ".tmp", JsonSerializer.Serialize(this));
+        File.Move(path + ".tmp", path, true);
+    }
+}
+
+internal sealed class CompanionWindow : Form
+{
+    private readonly WebView2 browser = new() { Dock = DockStyle.Fill, DefaultBackgroundColor = Color.FromArgb(13, 22, 18) };
+    private readonly ToolStrip toolbar = new() { GripStyle = ToolStripGripStyle.Hidden, BackColor = Color.FromArgb(27, 42, 33), ForeColor = Color.FromArgb(236, 237, 220), Padding = new Padding(8), RenderMode = ToolStripRenderMode.System };
+    private readonly ToolStripButton home = new("Sir David");
+    private readonly ToolStripButton reload = new("Ladda om");
+    private readonly ToolStripButton pin = new("Överst") { CheckOnClick = true };
+    private readonly ToolStripLabel status = new("Ansluter till privat Admin…");
+    private readonly string preferencesPath = Path.Combine(Program.StateDirectory, "window.json");
+    private AppConfig? config;
+
+    public CompanionWindow()
+    {
+        Text = Program.Name;
+        Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
+        var preferences = WindowPreferences.Load(preferencesPath);
+        var workingArea = Screen.PrimaryScreen!.WorkingArea;
+        Size = new Size(Math.Clamp(preferences.Width, 480, Math.Max(480, workingArea.Width)), Math.Clamp(preferences.Height, 540, Math.Max(540, workingArea.Height)));
+        MinimumSize = new Size(480, 540);
+        StartPosition = FormStartPosition.CenterScreen;
+        BackColor = Color.FromArgb(13, 22, 18);
+        TopMost = pin.Checked = preferences.AlwaysOnTop;
+        toolbar.Items.AddRange([home, reload, pin, new ToolStripSeparator(), status]);
+        Controls.Add(browser);
+        Controls.Add(toolbar);
+        home.Click += (_, _) => { if (config is not null && browser.CoreWebView2 is not null) browser.CoreWebView2.Navigate(config.StartUrl); };
+        reload.Click += (_, _) => browser.CoreWebView2?.Reload();
+        pin.CheckedChanged += (_, _) => TopMost = pin.Checked;
+        Shown += async (_, _) => await InitializeBrowser();
+        FormClosing += (_, _) => {
+            var size = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
+            try { new WindowPreferences(size.Width, size.Height, TopMost).Save(preferencesPath); } catch { }
+        };
+    }
+
+    private async Task InitializeBrowser()
+    {
+        try
+        {
+            config = AppConfig.Load(Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+            var environment = await CoreWebView2Environment.CreateAsync(null, Path.Combine(Program.StateDirectory, "Browser"));
+            await browser.EnsureCoreWebView2Async(environment);
+            RecordStartup("browser-initialized", false);
+            browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            browser.CoreWebView2.Settings.AreHostObjectsAllowed = false;
+            browser.CoreWebView2.Settings.IsWebMessageEnabled = false;
+            browser.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+            browser.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
+            browser.CoreWebView2.NavigationStarting += (_, e) => {
+                if (!NavigationPolicy.SameOrigin(e.Uri)) { e.Cancel = true; status.Text = "Endast sp1e.se öppnas i appen"; }
+                else status.Text = "Ansluter…";
+            };
+            browser.CoreWebView2.NavigationCompleted += (_, e) => {
+                status.Text = e.IsSuccess ? "Sir David · privat Admin" : "Ingen anslutning · tryck Ladda om";
+                RecordStartup("navigation-completed", e.IsSuccess);
+                Program.StartupReport = null;
+            };
+            browser.CoreWebView2.NewWindowRequested += (_, e) => { e.Handled = true; status.Text = "Öppna externa länkar i din vanliga webbläsare"; };
+            browser.CoreWebView2.DownloadStarting += (_, e) => { e.Cancel = true; status.Text = "Använd webbläsaren för nedladdningar"; };
+            browser.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+            browser.CoreWebView2.Navigate(config.StartUrl);
+        }
+        catch (WebView2RuntimeNotFoundException)
+        {
+            status.Text = "Microsoft Edge WebView2 behöver installeras";
+            MessageBox.Show("Installera Microsoft Edge WebView2 Runtime från Microsoft och starta Sir David igen.", Program.Name);
+        }
+        catch
+        {
+            status.Text = "Kunde inte starta · försök igen";
+            MessageBox.Show("Kontrollera internetanslutningen och appens Admin-adress. Starta sedan Sir David igen.", Program.Name);
+        }
+    }
+
+    private void RecordStartup(string stage, bool navigationSucceeded)
+    {
+        if (Program.StartupReport is not { } path) return;
+        try {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(new {
+                application = Program.Name, stage,
+                browserInitialized = browser.CoreWebView2 is not null,
+                navigationSucceeded,
+                configuredStartUrl = config?.StartUrl,
+                runtime = browser.CoreWebView2?.Environment.BrowserVersionString,
+                modelRequestsByDesktopHost = 0
+            }, new JsonSerializerOptions { WriteIndented = true }));
+        } catch { }
+    }
+}
+
+internal static class SelfTest
+{
+    public static void Run(string reportPath)
+    {
+        var results = new List<object>();
+        var failed = 0;
+        void Check(string name, bool passed) { results.Add(new { name, passed }); if (!passed) failed++; }
+        Check("Admin HTTPS entry accepted", NavigationPolicy.ValidStart("https://sp1e.se/admin/?panel=sir-david"));
+        Check("Canonical www Admin entry accepted", NavigationPolicy.ValidStart("https://www.sp1e.se/admin/?panel=sir-david"));
+        Check("Public entry rejected", !NavigationPolicy.ValidStart("https://sp1e.se/"));
+        foreach (var url in new[] { "http://sp1e.se/admin/", "https://evil.example/admin/", "https://sp1e.se.evil.example/admin/", "https://user:password@sp1e.se/admin/", "file:///C:/admin/", "javascript:alert(1)", "https://sp1e.se:8443/admin/", "https://sp1e.se/admin-elsewhere" })
+            Check("Reject " + url, !NavigationPolicy.ValidStart(url));
+        Check("Same-origin login redirect accepted", NavigationPolicy.SameOrigin("https://sp1e.se/portal/"));
+        Check("Current configuration accepted", NavigationPolicy.ValidStart(AppConfig.Load(Path.Combine(AppContext.BaseDirectory, "appsettings.json")).StartUrl));
+        var scratch = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(reportPath))!, "self-test-window.json");
+        new WindowPreferences(800, 700, true).Save(scratch);
+        Check("Window preferences survive restart", WindowPreferences.Load(scratch) == new WindowPreferences(800, 700, true));
+        File.Delete(scratch);
+        Check("Missing preferences use default", WindowPreferences.Load(scratch) == new WindowPreferences());
+        string runtime;
+        try { runtime = CoreWebView2Environment.GetAvailableBrowserVersionString(); Check("WebView2 runtime installed", !string.IsNullOrEmpty(runtime)); }
+        catch { runtime = "unavailable"; Check("WebView2 runtime installed", false); }
+        File.WriteAllText(reportPath, JsonSerializer.Serialize(new { application = Program.Name, failed, runtime, results }, new JsonSerializerOptions { WriteIndented = true }));
+        Environment.ExitCode = failed == 0 ? 0 : 1;
+    }
+}
+
