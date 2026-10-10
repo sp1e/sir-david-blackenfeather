@@ -19,6 +19,8 @@ jobs:
       - run: npm run check
       - run: npm run build
       - run: npm test
+      - run: node --test --test-timeout=10000 local-adapter/claude-adapter.test.mjs
+        working-directory: .
   windows:
     runs-on: windows-latest
     steps:
