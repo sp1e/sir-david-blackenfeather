@@ -47,7 +47,7 @@
     },
     {
       "path": "assets/setup/sp1e-local-agents.zip",
-      "sha256": "312e381c896a21912e7e01c73fa4679d20c31d3b5579415043f4681b66b57171"
+      "sha256": "b9d34599b88c8332ee6b20725f116269a12c19f53a72be25be8788257c33e92e"
     },
     {
       "path": "functions/api/sir-david/[[route]].ts",

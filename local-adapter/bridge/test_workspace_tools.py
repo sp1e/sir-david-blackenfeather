@@ -51,6 +51,18 @@ class WorkspaceTests(unittest.TestCase):
         result=self.files.search('[literal]')
         self.assertEqual(result['matches'][0]['line'],1)
         self.assertEqual(len(result['matches']),1)
+    def test_empty_directory_tree_search_is_bounded(self):
+        for number in range(110):(self.root/str(number)).mkdir()
+        with patch.object(self.files,'entries',wraps=self.files.entries) as scan:
+            result=self.files.search('missing')
+        self.assertTrue(result['truncated'])
+        self.assertLessEqual(scan.call_count,100)
+    def test_listing_bounds_enumeration_before_sorting(self):
+        for number in range(510):(self.root/str(number)).mkdir()
+        entries,truncated=self.files.entries(self.root)
+        self.assertEqual(len(entries),500)
+        self.assertTrue(truncated)
+        self.assertTrue(self.files.listing()['truncated'])
     def test_history_is_outside_workspace_and_payload_has_no_backup_text(self):
         created=self.files.write('secret.txt','synthetic-private-text',None)
         serialized=json.dumps(self.files.activity())

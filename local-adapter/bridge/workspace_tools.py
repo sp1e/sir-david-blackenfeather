@@ -121,32 +121,55 @@ class Workspace:
         target=self.path(path,True);items=[]
         with self.lock,self.pinned(target/'_probe'):
             check_link(target)
-            for index,item in enumerate(sorted(target.iterdir())):
-                if index>=500:break
+            entries,truncated=self.entries(target)
+            for item in entries:
                 try:
                     info=check_link(item)
                     if not safe_part(item.name) or info.st_nlink>1 and stat.S_ISREG(info.st_mode):continue
                     items.append({'path':item.relative_to(self.root).as_posix(),'type':'directory' if item.is_dir() else 'file','bytes':info.st_size})
                 except (ValueError,OSError):continue
                 if len(items)==100:break
-        return {'items':items,'truncated':len(items)==100}
+        return {'items':items,'truncated':truncated or len(items)==100}
+
+    def entries(self,directory):
+        # Bound enumeration before sorting, including directories with no files.
+        items=[]
+        with os.scandir(directory) as scan:
+            for item in scan:
+                if len(items)==500:return sorted(items),True
+                items.append(Path(item.path))
+        return sorted(items),False
 
     def search(self,query):
         if not isinstance(query,str) or not 1<=len(query)<=100 or '\0' in query:raise ValueError('Sök med 1–100 tecken.')
-        matches=[];visited=0
-        for directory,dirs,files in os.walk(self.root,followlinks=False):
-            dirs[:]=[name for name in sorted(dirs) if safe_part(name) and not (Path(directory)/name).is_symlink() and not getattr((Path(directory)/name).lstat(),'st_file_attributes',0)&0x400][:100]
-            for name in sorted(files):
+        matches=[];visited=0;directories=[self.root];scanned=0;truncated=False
+        while directories:
+            if scanned==100:return {'matches':matches,'truncated':True}
+            directory=directories.pop();scanned+=1
+            try:
+                with self.lock,self.pinned(directory/'_probe'):
+                    entries,limited=self.entries(directory);truncated=truncated or limited
+                    files=[]
+                    for item in entries:
+                        try:info=check_link(item)
+                        except (ValueError,OSError):continue
+                        if not safe_part(item.name):continue
+                        if stat.S_ISDIR(info.st_mode):
+                            if len(directories)+scanned<100:directories.append(item)
+                            else:truncated=True
+                        elif stat.S_ISREG(info.st_mode):files.append(item)
+            except (ValueError,OSError):continue
+            for item in files:
                 visited+=1
                 if visited>200:return {'matches':matches,'truncated':True}
-                path=(Path(directory)/name).relative_to(self.root).as_posix()
+                path=item.relative_to(self.root).as_posix()
                 try:
                     with self.lock,self.opened(self.path(path)) as (stream,_):text=plain(stream.read(MAX_BYTES+1))
                 except (ValueError,OSError):continue
                 for number,line in enumerate(text.splitlines(),1):
                     if query.casefold() in line.casefold():matches.append({'path':path,'line':number,'excerpt':line[:240]})
                     if len(matches)>=30:return {'matches':matches,'truncated':True}
-        return {'matches':matches,'truncated':False}
+        return {'matches':matches,'truncated':truncated}
 
     def records(self):
         return sorted(self.history.glob('*.json'),key=lambda p:p.name,reverse=True)
