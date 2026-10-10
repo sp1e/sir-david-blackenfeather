@@ -13,6 +13,10 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'sir-david-tests-'));
 const outfile = path.join(temp, 'api.mjs');
 await build({ entryPoints:[fileURLToPath(new URL('src/site/sir-david-api.ts', root))], bundle:true, format:'esm', platform:'neutral', outfile, logLevel:'silent' });
 const { handleSirDavidRequest } = await import(pathToFileURL(outfile).href);
+const gateFile = path.join(temp, 'gate.mjs');
+await build({ entryPoints:[fileURLToPath(new URL('src/site/portal-gate.ts', root))], bundle:true, format:'esm', platform:'neutral', outfile:gateFile, logLevel:'silent' });
+const { checkPortalGate } = await import(pathToFileURL(gateFile).href);
+const { allowedNext } = await import(new URL('portal/portal.js', root));
 test.after(() => fs.rmSync(temp, { recursive:true, force:true }));
 
 const origin = 'https://sp1e.test';
@@ -70,6 +74,9 @@ test('saved audio defaults on, persists per owner and rejects stale clients with
     assert.equal((await call(env,'preferences',{role,method,payload:{autoSpeak:false,version:0}})).status,role?403:401);
   }
   assert.deepEqual((await (await call(env,'preferences')).json()).preferences,{autoSpeak:true,version:0});
+  const writes=env.sql.prepare('SELECT total_changes() n').get().n;
+  await call(env,'preferences');await call(env,'preferences');
+  assert.equal(env.sql.prepare('SELECT total_changes() n').get().n,writes);
   assert.deepEqual((await (await call(env,'preferences',{method:'PUT',payload:{autoSpeak:false,version:0}})).json()).preferences,{autoSpeak:false,version:1});
   assert.deepEqual((await (await call(env,'profile')).json()).preferences,{autoSpeak:false,version:1});
   assert.deepEqual((await (await call(env,'preferences',{role:'other'})).json()).preferences,{autoSpeak:true,version:0});
@@ -99,6 +106,27 @@ test('real portal sessions restrict every companion route to Admin, including re
   env.sql.prepare("UPDATE site_portal_profiles SET revoked_at=? WHERE id='other'").run(new Date().toISOString());
   assert.equal((await call(env,'profile',{role:'other'})).status,401);
   assert.equal(calls.length,0);
+});
+
+test('private Admin document and assets stay gated before public static extension exceptions', async t => {
+  const env = fixture(t);
+  for (const page of ['/admin','/admin/','/admin.html','/admin/index.html','/admin/sir-david.js','/admin/assets/raven-idle.png','/admin/assets/silence.wav']) {
+    for (const role of [null,'guest','clique','admin']) {
+      const req = new Request(origin + page, { headers: role ? { cookie:'__Host-sp1e_session=' + tokens[role] } : {} });
+      const result = await checkPortalGate(req, env, page);
+      assert.equal(result === null, role === 'admin', page + ' ' + role);
+      if (result) assert.equal(result.status, 302);
+    }
+  }
+});
+
+test('Admin login preserves the companion query and visitor roles cannot return to Admin', async t => {
+  const env = fixture(t), target = '/admin/?panel=sir-david';
+  const result = await checkPortalGate(new Request(origin + target), env, '/admin/');
+  assert.equal(new URL(result.headers.get('Location')).searchParams.get('next'), target);
+  assert.equal(allowedNext(target, [], origin, 'admin'), target);
+  for (const role of [null, 'guest', 'clique']) assert.equal(allowedNext(target, ['admin'], origin, role), null);
+  for (const target of ['//foreign.test/admin/', '/\\foreign.test/admin/', '/admin/assets/raven-idle.png', '/administrator/']) assert.equal(allowedNext(target, [], origin, 'admin'), null);
 });
 
 test('origins, cross-site reads, content type, JSON and unknown fields fail without spending',async t=>{

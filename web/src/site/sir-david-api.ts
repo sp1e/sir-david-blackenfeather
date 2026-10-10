@@ -71,8 +71,13 @@ async function conversation(env: SirDavidEnv, owner: string) {
   return { version: row.version, messages: JSON.parse(row.messages_json) as { role: string; content: string }[] };
 }
 async function preferences(env: SirDavidEnv, owner: string) {
-  await env.DB.prepare('INSERT OR IGNORE INTO site_companion_preferences(owner_id) VALUES (?)').bind(owner).run();
-  const row = await env.DB.prepare('SELECT auto_speak,version FROM site_companion_preferences WHERE owner_id=?').bind(owner).first<{ auto_speak: number; version: number }>();
+  const read = () => env.DB.prepare('SELECT auto_speak,version FROM site_companion_preferences WHERE owner_id=?').bind(owner).first<{ auto_speak: number; version: number }>();
+  let row = await read();
+  if (!row) {
+    // Preference polls stay read-only after the owner's default is established.
+    await env.DB.prepare('INSERT OR IGNORE INTO site_companion_preferences(owner_id) VALUES (?)').bind(owner).run();
+    row = await read();
+  }
   if (!row) throw new PortalError(503, 'Ljudinställningen kunde inte läsas.');
   return { autoSpeak: row.auto_speak === 1, version: row.version };
 }

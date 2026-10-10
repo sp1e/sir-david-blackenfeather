@@ -4,12 +4,16 @@
   "adaptations": [
     "API tests omit two host middleware/login integration cases; original cases stay in sp1e.se.",
     "schema.sql contains only the sessions fixture prerequisite; no unrelated application tables.",
-    "Prepared automatic speech patch: persistent per-owner preferences, audio gesture priming and safe stop/mute. Host review and integration remain pending."
+    "Owner-reviewed automatic speech files and additional auth-gate test dependencies copied from PR240 commit 1829fb311d74aae09d50b9ad202a9dce106e5d63. _redirects contains the relevant Admin and Sir David SQL rules only; other website routes are excluded."
   ],
   "files": [
     {
       "path": ".gitignore",
       "sha256": "fb2e77ae041a7c088d6d520c69852a56b1042ff457838623b3e7bf4dc0589067"
+    },
+    {
+      "path": "_redirects",
+      "sha256": "e99bfdd0f0a51a3ddaea28ba298fd58ebd9bb3c7d08ae77487446f85ebba309b"
     },
     {
       "path": "admin/assets/raven-idle.png",
@@ -21,15 +25,15 @@
     },
     {
       "path": "admin/index.html",
-      "sha256": "e2fe65254f23a9db7327906707b0f3e900940a842f38fecc5b225381d77e711a"
+      "sha256": "22f21949144aaff51c62fcc19f077bfffc41f60c8b2cafdd36bbf76997b0b2ca"
     },
     {
       "path": "admin/sir-david.css",
-      "sha256": "74fbf2f747338934a64a7cec9cadd432861ab204e46e7bf00f4434a7f644f0b2"
+      "sha256": "4cd730cdf1aa3cef0a0dc3fd050d4e49a45bb03777abe095d4b13770f4c562a9"
     },
     {
       "path": "admin/sir-david.js",
-      "sha256": "c6474589bbe8317fd6abf21deb81b0672cf9ab14f2b9687dd47757e6725d16bd"
+      "sha256": "44199d212dd02ee4a8a06c8be03784a475126ca8cd8712755567355187350ddf"
     },
     {
       "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
@@ -48,8 +52,12 @@
       "sha256": "f7c2590a4b74efc64a41c1d3bc306677b5b020245320ccd1e72ef2762adb2dc1"
     },
     {
+      "path": "portal/portal.js",
+      "sha256": "65199e0e3c27753746556649b25edfb5008155065076ad4ad6fdcfd45d0495ba"
+    },
+    {
       "path": "README.md",
-      "sha256": "c996235b1c1d9b017da5a485df3baeddddb288ab8c6dac3f20098b1b3346e2ec"
+      "sha256": "04972577902b9e88f81265e89cb95e68807ecf1c1567e8698d1ade0505bf741d"
     },
     {
       "path": "schema.sql",
@@ -57,11 +65,11 @@
     },
     {
       "path": "scripts/sir-david-ui.test.mjs",
-      "sha256": "91845849f17e5bedc17435d305c47d90c53cca206bac96ef9ec001f9c4b4674d"
+      "sha256": "0ab40a65b3f21781a78c885da7315911b7a320ae0b3bf1fca88d003938be1932"
     },
     {
       "path": "scripts/sir-david.test.mjs",
-      "sha256": "fbcd3faac434fffb66529914db325fa7e96ed6a3ad71fed714b79ffc6a3f4e9d"
+      "sha256": "b3cc97920af036b7a0673bd1dc0047ebbf929f6c51351e7e76f0dfaf7d9be539"
     },
     {
       "path": "site-migration-002-auth-throttle.sql",
@@ -80,6 +88,14 @@
       "sha256": "72edaf3901863bf74f27de777a4f75ce0fcf1fc97ccffbac53d59a5cc72342d0"
     },
     {
+      "path": "src/site/portal-api.ts",
+      "sha256": "13d7fae9fb91ce045a04a6fedcb5ad796b74ea2978056503e47bddd3719b412a"
+    },
+    {
+      "path": "src/site/portal-gate.ts",
+      "sha256": "df5cc19d77f1f153b7186676319f6eff2cfeee07260c92e9b53201b8272147a2"
+    },
+    {
       "path": "src/site/portal-policy.ts",
       "sha256": "79d5bb89bba01dbd59f6ae962e33cca3ab615878a80b000ae91e22ae659ee340"
     },
@@ -89,7 +105,7 @@
     },
     {
       "path": "src/site/sir-david-api.ts",
-      "sha256": "add32765b526c5bb1093aa0a02503dab496cd6a5a529ed7457be057a7529f559"
+      "sha256": "09410186c5193621349125291080f202aecc9b0498ad1d1c5d1b042c68ddee56"
     },
     {
       "path": "tsconfig.json",
@@ -103,5 +119,7 @@
     "liveInference": false,
     "secretPatternScan": "passed",
     "runtime": "requires host portal authentication and D1; no standalone login"
-  }
+  },
+  "audioSourceCommit": "1829fb311d74aae09d50b9ad202a9dce106e5d63",
+  "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68"
 }

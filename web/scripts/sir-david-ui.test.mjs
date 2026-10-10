@@ -74,7 +74,9 @@ test('mute cancels pending speech, persists the choice, and late audio never pla
 });
 test('Stop preserves saved audio on and the next new reply speaks again',async t=>{
   const f=await audioFixture(t,{delaySpeech:true});await f.submit();
-  f.w.document.getElementById('stop-speech').click();f.releaseSpeech();await settle();
+  f.w.document.getElementById('stop-speech').click();
+  assert.equal(f.w.document.querySelector('#messages .listen-button').disabled,false);
+  f.releaseSpeech();await settle();
   assert.equal(f.preferences().autoSpeak,true);assert.equal(f.calls.some(([url,init])=>url.endsWith('/preferences')&&init.method==='PUT'),false);
   await f.submit();f.releaseSpeech();await settle();assert.equal(f.played.length,1);
 });
@@ -97,10 +99,20 @@ test('a mute saved by the other client stops current playback on the next prefer
   const f=await audioFixture(t,{capturePoll:true,holdAudio:true});await f.submit();
   assert.equal(f.played.length,1);assert.equal(f.w.document.getElementById('stop-speech').hidden,false);
   await f.w.fetch('/api/sir-david/preferences',{method:'PUT',body:JSON.stringify({autoSpeak:false,version:0})});
+  let visibility='hidden';Object.defineProperty(f.w.document,'visibilityState',{get:()=>visibility});
   f.poll();await settle();
   assert.equal(f.w.document.getElementById('sound-toggle').textContent,'Ljud av');
   assert.equal(f.w.document.getElementById('stop-speech').hidden,true);
   assert.equal(f.pauses.some(src=>src.startsWith('blob:')),true);
+  assert.equal(f.w.document.getElementById('status').textContent,'Ljudet är avstängt i din andra vy.');
+});
+
+test('hidden idle clients do not poll; returning to the page refreshes saved audio',async t=>{
+  const f=await audioFixture(t,{capturePoll:true});
+  let visibility='hidden';Object.defineProperty(f.w.document,'visibilityState',{get:()=>visibility});
+  const before=f.calls.length;f.poll();await settle();assert.equal(f.calls.length,before);
+  visibility='visible';f.w.document.dispatchEvent(new f.w.Event('visibilitychange'));await settle();
+  assert.equal(f.calls.length,before+1);assert.equal(f.calls.at(-1)[0],'/api/sir-david/preferences');
 });
 test('private companion restores server conversation, uses text rendering and never browser storage', async () => {
   const dom = new JSDOM(html, { url: 'https://www.sp1e.se/admin/?panel=sir-david', runScripts: 'outside-only' });

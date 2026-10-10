@@ -43,12 +43,15 @@
   function update() { $('send').disabled = busy || !connected; $('model').disabled = busy || !connected; $('prompt').disabled = busy; $('new-chat').disabled = !authorized; $('reload-chat').disabled = busy || !authorized; $('save-memory').disabled = !authorized; $('sound-toggle').disabled = !authorized || !preferencesReady || preferencesBusy; $('sound-toggle').textContent = !preferencesReady ? 'Läser ljudval…' : autoSpeak ? 'Ljud på' : 'Ljud av'; $('sound-toggle').setAttribute('aria-pressed', String(autoSpeak)); document.querySelectorAll('.listen-button').forEach(button => { button.disabled = !autoSpeak || speechBusy; }); }
   function stopAudio() { if (audio) { audio.pause(); audio = null; } if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; } }
   function cancelSpeech() { speechEpoch++; speechController?.abort(); speechController = null; speechBusy = false; stopAudio(); $('stop-speech').hidden = true; }
-  $('stop-speech').addEventListener('click', () => { cancelSpeech(); $('status').textContent = 'Rösten är stoppad.'; });
+  $('stop-speech').addEventListener('click', () => { cancelSpeech(); update(); $('status').textContent = 'Rösten är stoppad.'; });
   function applyPreferences(value) {
     if (!value || typeof value.autoSpeak !== 'boolean' || !Number.isSafeInteger(value.version) || value.version < 0) throw Error('Ljudinställningen kunde inte läsas.');
     if (value.version < preferenceRevision) return;
+    const mutedWhileSpeaking = !value.autoSpeak && speechBusy;
     preferenceRevision = value.version; autoSpeak = value.autoSpeak; preferencesReady = true;
-    if (!autoSpeak) cancelSpeech(); update();
+    if (!autoSpeak) cancelSpeech();
+    if (mutedWhileSpeaking) $('status').textContent = 'Ljudet är avstängt i din andra vy.';
+    update();
   }
   async function refreshPreferences() { const value = (await (await api('preferences')).json()).preferences; if (!preferencesBusy) applyPreferences(value); }
   function primeAudio() {
@@ -188,6 +191,8 @@
     update();
   }
   if (new URL(window.location.href).searchParams.get('panel') === 'sir-david') setPanel(true, false);
-  const preferenceTimer = setInterval(() => { if (initialized && authorized && !preferencesBusy && !preferencesFailed && !$('sir-david-panel').hidden) refreshPreferences().catch(() => { preferencesFailed = true; autoSpeak = false; cancelSpeech(); update(); }); }, 5000);
+  const pollPreferences = () => { if (initialized && authorized && !preferencesBusy && !preferencesFailed && !$('sir-david-panel').hidden && (speechBusy || document.visibilityState !== 'hidden')) refreshPreferences().catch(() => { preferencesFailed = true; autoSpeak = false; cancelSpeech(); update(); }); };
+  const preferenceTimer = setInterval(pollPreferences, 5000);
+  document.addEventListener('visibilitychange', pollPreferences);
   window.addEventListener('pagehide', () => clearInterval(preferenceTimer));
 })();
