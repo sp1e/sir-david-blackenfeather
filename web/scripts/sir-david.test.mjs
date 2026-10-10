@@ -21,7 +21,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 function fixture(t, extra = {}) {
   const sql = new DatabaseSync(':memory:');
   sql.exec('PRAGMA foreign_keys=ON');
-  for (const file of ['schema.sql','site-migration-002-auth-throttle.sql','site-migration-003-portal.sql','site-migration-005-sir-david.sql']) sql.exec(fs.readFileSync(new URL(file, root),'utf8'));
+  for (const file of ['schema.sql','site-migration-002-auth-throttle.sql','site-migration-003-portal.sql','site-migration-005-sir-david.sql','site-migration-006-sir-david-audio.sql']) sql.exec(fs.readFileSync(new URL(file, root),'utf8'));
   for (const [id,token] of Object.entries(tokens)) {
     const role = id === 'other' ? 'admin' : id;
     sql.prepare('INSERT INTO site_portal_profiles(id,role,device_hash,created_at) VALUES (?,?,?,?)').run(id,role,'fixture-device-'+id,new Date().toISOString());
@@ -63,6 +63,30 @@ const memory = (env,content,role='admin') => call(env,'memories',{role,method:'P
 const conversation = async (env,role='admin') => (await (await call(env,'conversation',{role})).json()).conversation;
 const leaseCount = env => env.sql.prepare('SELECT count(*) n FROM site_companion_leases').get().n;
 const quotaCount = env => env.sql.prepare("SELECT coalesce(sum(attempts),0) n FROM auth_attempts WHERE scope LIKE 'sir-david-%'").get().n;
+
+test('saved audio defaults on, persists per owner and rejects stale clients without spending',async t=>{
+  const env=fixture(t), calls=upstream(t);
+  for (const role of [null,'guest','clique']) for (const method of ['GET','PUT']) {
+    assert.equal((await call(env,'preferences',{role,method,payload:{autoSpeak:false,version:0}})).status,role?403:401);
+  }
+  assert.deepEqual((await (await call(env,'preferences')).json()).preferences,{autoSpeak:true,version:0});
+  assert.deepEqual((await (await call(env,'preferences',{method:'PUT',payload:{autoSpeak:false,version:0}})).json()).preferences,{autoSpeak:false,version:1});
+  assert.deepEqual((await (await call(env,'profile')).json()).preferences,{autoSpeak:false,version:1});
+  assert.deepEqual((await (await call(env,'preferences',{role:'other'})).json()).preferences,{autoSpeak:true,version:0});
+  assert.equal((await call(env,'preferences',{method:'PUT',payload:{autoSpeak:true,version:0}})).status,409);
+  for (const payload of [{autoSpeak:'true',version:1},{autoSpeak:true,version:-1},{autoSpeak:true,version:1,owner:'other'}]) {
+    assert.equal((await call(env,'preferences',{method:'PUT',payload})).status,400);
+  }
+  assert.equal(calls.length,0); assert.equal(quotaCount(env),0);
+});
+test('mute rejects speech before provider access and another owner retains its own audio setting',async t=>{
+  const env=fixture(t), calls=upstream(t,()=>new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'audio/mpeg'}}));
+  await call(env,'preferences',{method:'PUT',payload:{autoSpeak:false,version:0}});
+  assert.equal((await call(env,'speech',{method:'POST',payload:{text:'Hello'}})).status,409);
+  assert.equal(calls.length,0); assert.equal(quotaCount(env),0); assert.equal(leaseCount(env),0);
+  assert.equal((await call(env,'speech',{role:'other',method:'POST',payload:{text:'Hello'}})).status,200);
+  assert.equal(calls.length,1);
+});
 
 test('real portal sessions restrict every companion route to Admin, including revoked identities',async t=>{
   const env=fixture(t),calls=upstream(t);

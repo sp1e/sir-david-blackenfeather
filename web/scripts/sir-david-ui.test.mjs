@@ -5,6 +5,103 @@ import { JSDOM } from 'jsdom';
 const html = fs.readFileSync('admin/index.html', 'utf8');
 const script = fs.readFileSync('admin/sir-david.js', 'utf8');
 const settle = () => new Promise(resolve => setTimeout(resolve, 25));
+
+async function audioFixture(t, options = {}) {
+  const dom=new JSDOM(html,{url:'https://www.sp1e.se/admin/?panel=sir-david',runScripts:'outside-only'});
+  t.after(()=>dom.window.close());
+  const w=dom.window, calls=[], played=[], pauses=[];
+  let preferences={autoSpeak:options.autoSpeak??true,version:0}, pendingSpeech, pendingChat, poll;
+  if(options.capturePoll){w.setInterval=callback=>{poll=callback;return 1;};w.clearInterval=()=>{};}
+  const conversation={version:0,messages:[{role:'assistant',content:'Old reply, do not replay.'}]};
+  w.confirm=()=>true;
+  w.Audio=class extends w.EventTarget {
+    constructor(){super();this.src='';}
+    pause(){pauses.push(this.src);}
+    async play(){
+      if(!this.src.startsWith('blob:'))return;
+      if(options.blockAudio)throw Object.assign(Error('blocked'),{name:'NotAllowedError'});
+      played.push(this.src);if(!options.holdAudio)setTimeout(()=>this.dispatchEvent(new w.Event('ended')),0);
+    }
+  };
+  let nextUrl=0;w.URL.createObjectURL=()=> 'blob:voice-'+(++nextUrl);w.URL.revokeObjectURL=()=>{};
+  w.fetch=async(url,init={})=>{
+    calls.push([url,init]);let data;
+    if(url.endsWith('/profile'))data={profile:{displayName:'Sir David'},preferences,models:['gemma4:31b'],chatConnected:true,speechConnected:true};
+    else if(url.endsWith('/preferences')) {
+      if(init.method==='PUT') {
+        if(options.failSave)return{ok:false,status:503,json:async()=>({error:'Save failed'})};
+        const body=JSON.parse(init.body); assert.equal(body.version,preferences.version);
+        preferences={autoSpeak:body.autoSpeak,version:preferences.version+1};
+      }
+      data={preferences};
+    } else if(url.endsWith('/memories'))data={memories:[]};
+    else if(url.endsWith('/conversation'))data={conversation};
+    else if(url.endsWith('/chat')) {
+      const finish=()=>({ok:true,json:async()=>({conversation:{version:++conversation.version,messages:[{role:'user',content:JSON.parse(init.body).text},{role:'assistant',content:options.reply??'New reply.'}]}})});
+      if(options.delayChat)return new Promise(resolve=>{pendingChat=()=>resolve(finish());});
+      return finish();
+    } else if(url.endsWith('/speech')) {
+      const response={ok:true,blob:async()=>new w.Blob(['synthetic audio'])};
+      if(options.delaySpeech)return new Promise(resolve=>{pendingSpeech=()=>resolve(response);});
+      return response;
+    } else throw Error('Unexpected endpoint');
+    return{ok:true,json:async()=>data};
+  };
+  w.eval(script);await settle();
+  return{w,calls,played,pauses,preferences:()=>preferences,poll:()=>poll(),releaseSpeech:()=>pendingSpeech(),releaseChat:()=>pendingChat(),async submit(){w.document.getElementById('prompt').value='Hello';w.document.getElementById('chat-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();}};
+}
+test('new replies speak automatically in bounded chunks, restored history stays silent',async t=>{
+  const f=await audioFixture(t,{reply:'A'.repeat(1200)+'B'.repeat(80)});
+  assert.equal(f.played.length,0);assert.equal(f.calls.filter(([url])=>url.endsWith('/speech')).length,0);
+  await f.submit();await settle();
+  const chunks=f.calls.filter(([url])=>url.endsWith('/speech')).map(([,init])=>JSON.parse(init.body).text);
+  assert.deepEqual(chunks,['A'.repeat(1200),'B'.repeat(80)]);assert.equal(f.played.length,2);
+  assert.equal(f.w.document.getElementById('stop-speech').hidden,true);
+});
+test('saved audio off is restored on startup and prevents automatic and manual speech',async t=>{
+  const f=await audioFixture(t,{autoSpeak:false});
+  assert.equal(f.w.document.getElementById('sound-toggle').textContent,'Ljud av');
+  await f.submit();assert.equal(f.calls.some(([url])=>url.endsWith('/speech')),false);
+  assert.equal(f.w.document.querySelector('#messages .listen-button').disabled,true);
+});
+test('mute cancels pending speech, persists the choice, and late audio never plays',async t=>{
+  const f=await audioFixture(t,{delaySpeech:true});await f.submit();
+  const speech=f.calls.find(([url])=>url.endsWith('/speech'));
+  f.w.document.getElementById('sound-toggle').click();await settle();
+  assert.equal(speech[1].signal.aborted,true);assert.equal(f.preferences().autoSpeak,false);
+  f.releaseSpeech();await settle();assert.equal(f.played.length,0);
+  assert.equal(f.w.document.getElementById('stop-speech').hidden,true);
+});
+test('Stop preserves saved audio on and the next new reply speaks again',async t=>{
+  const f=await audioFixture(t,{delaySpeech:true});await f.submit();
+  f.w.document.getElementById('stop-speech').click();f.releaseSpeech();await settle();
+  assert.equal(f.preferences().autoSpeak,true);assert.equal(f.calls.some(([url,init])=>url.endsWith('/preferences')&&init.method==='PUT'),false);
+  await f.submit();f.releaseSpeech();await settle();assert.equal(f.played.length,1);
+});
+test('a mute change while chat is pending prevents automatic speech of the arriving reply',async t=>{
+  const f=await audioFixture(t,{delayChat:true});await f.submit();
+  f.w.document.getElementById('sound-toggle').click();await settle();f.releaseChat();await settle();
+  assert.equal(f.calls.some(([url])=>url.endsWith('/speech')),false);assert.equal(f.played.length,0);
+});
+test('a blocked browser playback exposes manual retry and does not claim successful speech',async t=>{
+  const f=await audioFixture(t,{blockAudio:true});await f.submit();await settle();
+  assert.match(f.w.document.getElementById('status').textContent,/Webbläsaren blockerade automatljud/);
+  assert.equal(f.w.document.querySelector('#messages .listen-button').disabled,false);
+  assert.equal(f.w.document.getElementById('stop-speech').hidden,true);assert.equal(f.played.length,0);
+});
+test('failed mute save keeps this client silent for the next reply',async t=>{
+  const f=await audioFixture(t,{failSave:true});f.w.document.getElementById('sound-toggle').click();await settle();
+  await f.submit();assert.equal(f.calls.some(([url])=>url.endsWith('/speech')),false);
+});
+test('a mute saved by the other client stops current playback on the next preference poll',async t=>{
+  const f=await audioFixture(t,{capturePoll:true,holdAudio:true});await f.submit();
+  assert.equal(f.played.length,1);assert.equal(f.w.document.getElementById('stop-speech').hidden,false);
+  await f.w.fetch('/api/sir-david/preferences',{method:'PUT',body:JSON.stringify({autoSpeak:false,version:0})});
+  f.poll();await settle();
+  assert.equal(f.w.document.getElementById('sound-toggle').textContent,'Ljud av');
+  assert.equal(f.w.document.getElementById('stop-speech').hidden,true);
+  assert.equal(f.pauses.some(src=>src.startsWith('blob:')),true);
+});
 test('private companion restores server conversation, uses text rendering and never browser storage', async () => {
   const dom = new JSDOM(html, { url: 'https://www.sp1e.se/admin/?panel=sir-david', runScripts: 'outside-only' });
   const w = dom.window, calls = [];
@@ -15,7 +112,8 @@ test('private companion restores server conversation, uses text rendering and ne
   w.fetch = async (url, options = {}) => {
     calls.push([url, options]);
     let data;
-    if (url.endsWith('/profile')) data = { profile: { displayName: 'Sir David Blackenfeather' }, models: ['gemma4:31b'], chatConnected: true, speechConnected: false };
+    if (url.endsWith('/profile')) data = { profile: { displayName: 'Sir David Blackenfeather' }, preferences:{autoSpeak:true,version:0}, models: ['gemma4:31b'], chatConnected: true, speechConnected: false };
+    else if (url.endsWith('/preferences')) data = {preferences:{autoSpeak:true,version:0}};
     else if (url.endsWith('/memories')) data = { memories: [{ id: 'note', content: '<script>bad()</script>' }] };
     else if (url.endsWith('/conversation')) { if (options.method === 'DELETE') conversation = { version: 5, messages: [] }; data = { conversation }; }
     else if (url.endsWith('/chat')) {
@@ -55,12 +153,13 @@ for (const action of ['stop', 'pagehide', 'clear', 'lost-auth', 'close']) test('
   const dom = new JSDOM(html, { url: 'https://www.sp1e.se/admin/?panel=sir-david', runScripts: 'outside-only' });
   const w = dom.window; let release, signal, created = 0, denied = false;
   w.confirm = () => true;
-  w.Audio = function () { created++; return { pause() {}, play: async () => {}, addEventListener() {} }; };
+  w.Audio = function () { return { src:'', pause() {}, async play() { if (this.src.startsWith('blob:')) created++; }, addEventListener() {}, removeEventListener() {} }; };
   w.URL.createObjectURL = () => 'blob:fixture'; w.URL.revokeObjectURL = () => {};
   w.fetch = async (url, options = {}) => {
     if (url.endsWith('/speech')) { signal = options.signal; return new Promise(resolve => { release = resolve; }); }
     if (denied) return { ok:false,status:401,json:async()=>({error:'Logga in först.'}) };
-    const data = url.endsWith('/profile') ? {profile:{displayName:'Sir David'},models:['gemma4:31b'],chatConnected:true,speechConnected:true}
+    const data = url.endsWith('/profile') ? {profile:{displayName:'Sir David'},preferences:{autoSpeak:true,version:0},models:['gemma4:31b'],chatConnected:true,speechConnected:true}
+      : url.endsWith('/preferences') ? {preferences:{autoSpeak:true,version:0}}
       : url.endsWith('/conversation') ? {conversation:{version:0,messages:options.method==='DELETE'?[]:[{role:'assistant',content:'Good evening.'}]}} : {memories:[]};
     return { ok:true,json:async()=>data };
   };
@@ -81,7 +180,8 @@ for (const action of ['stop', 'pagehide', 'clear', 'lost-auth', 'close']) test('
 function readyServer(w, calls) {
   w.fetch = async (url,options={}) => {
     calls.push([url,options]);
-    const data=url.endsWith('/profile') ? {profile:{displayName:'Sir David'},models:['gemma4:31b'],chatConnected:true,speechConnected:false}
+    const data=url.endsWith('/profile') ? {profile:{displayName:'Sir David'},preferences:{autoSpeak:true,version:0},models:['gemma4:31b'],chatConnected:true,speechConnected:false}
+      : url.endsWith('/preferences') ? {preferences:{autoSpeak:true,version:0}}
       : url.endsWith('/conversation') ? {conversation:{version:0,messages:[]}} : {memories:[]};
     return {ok:true,json:async()=>data};
   };

@@ -32,6 +32,14 @@ internal static class NavigationPolicy
     public static bool ValidStart(string candidate) =>
         SameOrigin(candidate) && Uri.TryCreate(candidate, UriKind.Absolute, out var uri) &&
         (uri.AbsolutePath == "/admin" || uri.AbsolutePath.StartsWith("/admin/", StringComparison.Ordinal));
+
+    public static bool ValidPairing(string candidate, string source)
+    {
+        if (!ValidStart(source) || !Uri.TryCreate(source, UriKind.Absolute, out var origin)
+            || !Uri.TryCreate(candidate, UriKind.Absolute, out var uri)) return false;
+        var expected = "http://127.0.0.1:4318/__connect/?origin=" + Uri.EscapeDataString(origin.GetLeftPart(UriPartial.Authority));
+        return candidate == expected && string.IsNullOrEmpty(uri.UserInfo) && string.IsNullOrEmpty(uri.Fragment);
+    }
 }
 
 internal record AppConfig(string StartUrl)
@@ -118,7 +126,7 @@ internal sealed class CompanionWindow : Form
                 RecordStartup("navigation-completed", e.IsSuccess);
                 Program.StartupReport = null;
             };
-            browser.CoreWebView2.NewWindowRequested += (_, e) => { e.Handled = true; status.Text = "Öppna externa länkar i din vanliga webbläsare"; };
+            browser.CoreWebView2.NewWindowRequested += async (_, e) => await OpenPairingWindow(e, environment);
             browser.CoreWebView2.DownloadStarting += (_, e) => { e.Cancel = true; status.Text = "Använd webbläsaren för nedladdningar"; };
             browser.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
             browser.CoreWebView2.Navigate(config.StartUrl);
@@ -132,6 +140,45 @@ internal sealed class CompanionWindow : Form
         {
             status.Text = "Kunde inte starta · försök igen";
             MessageBox.Show("Kontrollera internetanslutningen och appens Admin-adress. Starta sedan Sir David igen.", Program.Name);
+        }
+    }
+
+    private async Task OpenPairingWindow(CoreWebView2NewWindowRequestedEventArgs request, CoreWebView2Environment environment)
+    {
+        request.Handled = true;
+        if (!request.IsUserInitiated || !NavigationPolicy.ValidPairing(request.Uri, browser.CoreWebView2.Source))
+        {
+            status.Text = "Öppna externa länkar i din vanliga webbläsare";
+            return;
+        }
+        using var deferral = request.GetDeferral();
+        Form? pairing = null;
+        try
+        {
+            var target = request.Uri;
+            var popup = new WebView2 { Dock = DockStyle.Fill };
+            pairing = new Form { Text = "Anslut din lokala agent", Size = new Size(520, 640), StartPosition = FormStartPosition.CenterParent };
+            pairing.Controls.Add(popup);
+            await popup.EnsureCoreWebView2Async(environment);
+            popup.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            popup.CoreWebView2.Settings.AreHostObjectsAllowed = false;
+            popup.CoreWebView2.Settings.IsWebMessageEnabled = false;
+            popup.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+            popup.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+            popup.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
+            popup.CoreWebView2.NavigationStarting += (_, e) => { if (e.Uri != target) e.Cancel = true; };
+            popup.CoreWebView2.NewWindowRequested += (_, e) => e.Handled = true;
+            popup.CoreWebView2.DownloadStarting += (_, e) => e.Cancel = true;
+            popup.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+            popup.CoreWebView2.WindowCloseRequested += (_, _) => pairing.Close();
+            // Assign before navigation so WebView2 preserves the opener used by postMessage.
+            request.NewWindow = popup.CoreWebView2;
+            pairing.Show(this);
+        }
+        catch
+        {
+            pairing?.Dispose();
+            status.Text = "Kunde inte öppna lokal anslutning. Kontrollera att agentbryggan är igång.";
         }
     }
 
@@ -166,6 +213,13 @@ internal static class SelfTest
             Check("Reject " + url, !NavigationPolicy.ValidStart(url));
         Check("Same-origin login redirect accepted", NavigationPolicy.SameOrigin("https://sp1e.se/portal/"));
         Check("Current configuration accepted", NavigationPolicy.ValidStart(AppConfig.Load(Path.Combine(AppContext.BaseDirectory, "appsettings.json")).StartUrl));
+        const string admin = "https://www.sp1e.se/admin/?panel=sir-david";
+        const string pair = "http://127.0.0.1:4318/__connect/?origin=https%3A%2F%2Fwww.sp1e.se";
+        Check("Exact local pairing accepted from Admin", NavigationPolicy.ValidPairing(pair, admin));
+        Check("Pairing rejected from public page", !NavigationPolicy.ValidPairing(pair, "https://www.sp1e.se/"));
+        Check("Pairing cannot cross site origin", !NavigationPolicy.ValidPairing(pair, "https://sp1e.se/admin/"));
+        foreach (var invalid in new[] { pair + "&extra=1", pair + "#fragment", pair.Replace("4318", "4319"), pair.Replace("127.0.0.1", "localhost"), pair.Replace("/__connect/", "/__agents/jobs"), pair.Replace("www.sp1e.se", "evil.example"), pair.Replace("http://", "http://user:password@") })
+            Check("Reject invalid pairing " + invalid, !NavigationPolicy.ValidPairing(invalid, admin));
         var scratch = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(reportPath))!, "self-test-window.json");
         new WindowPreferences(800, 700, true).Save(scratch);
         Check("Window preferences survive restart", WindowPreferences.Load(scratch) == new WindowPreferences(800, 700, true));

@@ -70,6 +70,12 @@ async function conversation(env: SirDavidEnv, owner: string) {
   if (!row) throw new PortalError(503, 'Samtalet är tillfälligt otillgängligt.');
   return { version: row.version, messages: JSON.parse(row.messages_json) as { role: string; content: string }[] };
 }
+async function preferences(env: SirDavidEnv, owner: string) {
+  await env.DB.prepare('INSERT OR IGNORE INTO site_companion_preferences(owner_id) VALUES (?)').bind(owner).run();
+  const row = await env.DB.prepare('SELECT auto_speak,version FROM site_companion_preferences WHERE owner_id=?').bind(owner).first<{ auto_speak: number; version: number }>();
+  if (!row) throw new PortalError(503, 'Ljudinställningen kunde inte läsas.');
+  return { autoSpeak: row.auto_speak === 1, version: row.version };
+}
 function version(value: unknown): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new PortalError(400, 'Samtalets version saknas.');
   return value as number;
@@ -99,6 +105,16 @@ export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, 
     if (request.headers.has('Origin') || !['GET', 'HEAD'].includes(request.method)) assertPortalOrigin(request);
     if (request.headers.get('sec-fetch-site') === 'cross-site') throw new PortalError(403, 'Anropet är inte tillåtet.');
     const owner = session.profileId;
+    if (route === 'preferences' && request.method === 'GET') return json({ preferences: await preferences(env, owner) });
+    if (route === 'preferences' && request.method === 'PUT') {
+      const input = await body(request, ['autoSpeak', 'version']);
+      if (typeof input.autoSpeak !== 'boolean') throw new PortalError(400, 'Välj ljud på eller av.');
+      await preferences(env, owner);
+      const saved = await env.DB.prepare('UPDATE site_companion_preferences SET auto_speak=?,version=version+1 WHERE owner_id=? AND version=? RETURNING auto_speak,version')
+        .bind(input.autoSpeak ? 1 : 0, owner, version(input.version)).first<{ auto_speak: number; version: number }>();
+      if (!saved) throw new PortalError(409, 'Ljudvalet har ändrats i en annan vy. Läs in det igen.');
+      return json({ preferences: { autoSpeak: saved.auto_speak === 1, version: saved.version } });
+    }
     if (route === 'conversation' && request.method === 'GET') return json({ conversation: await conversation(env, owner) });
     if (route === 'conversation' && request.method === 'DELETE') {
       const input = await body(request, ['version']);
@@ -107,7 +123,7 @@ export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, 
       return json({ conversation: { version: cleared.version, messages: [] } });
     }
     if (route === 'profile' && request.method === 'GET') {
-      return json({ profile: await profile(env), models: MODELS, chatConnected: Boolean(env.OLLAMA_API_KEY?.trim() && env.ASSISTANT_ENABLED !== 'false'), speechConnected: Boolean(env.SIR_DAVID_ELEVENLABS_API_KEY?.trim()) });
+      return json({ profile: await profile(env), preferences: await preferences(env, owner), models: MODELS, chatConnected: Boolean(env.OLLAMA_API_KEY?.trim() && env.ASSISTANT_ENABLED !== 'false'), speechConnected: Boolean(env.SIR_DAVID_ELEVENLABS_API_KEY?.trim()) });
     }
     if (route === 'memories' && request.method === 'GET') return json({ memories: await memories(env, owner) });
     if (route === 'memories' && request.method === 'POST') {
@@ -160,6 +176,7 @@ export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, 
       });
     }
     if (route === 'speech' && request.method === 'POST') {
+      if (!(await preferences(env, owner)).autoSpeak) throw new PortalError(409, 'Ljudet är avstängt.');
       const input = await body(request, ['text']);
       const configured = await profile(env), speechText = text(input.text, configured.voice.maxChars);
       const speechKey = env.SIR_DAVID_ELEVENLABS_API_KEY?.trim();

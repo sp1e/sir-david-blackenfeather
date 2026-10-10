@@ -3,7 +3,8 @@
   "sourceCommit": "69a9f357101a391677dc0753aeb94ffde75db61e",
   "adaptations": [
     "API tests omit two host middleware/login integration cases; original cases stay in sp1e.se.",
-    "schema.sql contains only the sessions fixture prerequisite; no unrelated application tables."
+    "schema.sql contains only the sessions fixture prerequisite; no unrelated application tables.",
+    "Prepared automatic speech patch: persistent per-owner preferences, audio gesture priming and safe stop/mute. Host review and integration remain pending."
   ],
   "files": [
     {
@@ -15,8 +16,12 @@
       "sha256": "de25762da9c68c600ddf9e1efabd8793792060619c6dcc14f7a8f5dd5c414bc7"
     },
     {
+      "path": "admin/assets/silence.wav",
+      "sha256": "55006117b5f1c40e8a7f00497ea6bfb14a433eb19c32cb74fd09d853c1aa81ee"
+    },
+    {
       "path": "admin/index.html",
-      "sha256": "3a787ca363fe19c41f396d0a1c08b171972ea9f5426daadc4b8424fe9a384f8f"
+      "sha256": "e2fe65254f23a9db7327906707b0f3e900940a842f38fecc5b225381d77e711a"
     },
     {
       "path": "admin/sir-david.css",
@@ -24,7 +29,7 @@
     },
     {
       "path": "admin/sir-david.js",
-      "sha256": "f86de9822f2eebc1aa6836df61bacbcec9331981801fb5e3dddc09627a4221ff"
+      "sha256": "c6474589bbe8317fd6abf21deb81b0672cf9ab14f2b9687dd47757e6725d16bd"
     },
     {
       "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
@@ -52,11 +57,11 @@
     },
     {
       "path": "scripts/sir-david-ui.test.mjs",
-      "sha256": "d390ab526d0eae6ebd2e2f8930347e25c9c95e2c3c885a26b913d9abce2e5d9d"
+      "sha256": "91845849f17e5bedc17435d305c47d90c53cca206bac96ef9ec001f9c4b4674d"
     },
     {
       "path": "scripts/sir-david.test.mjs",
-      "sha256": "8a32d37a7ff97187dac24ad4b775ae0d16e0a767dca656b45ed5801f660b6b05"
+      "sha256": "fbcd3faac434fffb66529914db325fa7e96ed6a3ad71fed714b79ffc6a3f4e9d"
     },
     {
       "path": "site-migration-002-auth-throttle.sql",
@@ -71,6 +76,10 @@
       "sha256": "b49cd3d57adade31ce64e9a08e259959cc27b0d1502233716358652cbc9b22f2"
     },
     {
+      "path": "site-migration-006-sir-david-audio.sql",
+      "sha256": "72edaf3901863bf74f27de777a4f75ce0fcf1fc97ccffbac53d59a5cc72342d0"
+    },
+    {
       "path": "src/site/portal-policy.ts",
       "sha256": "79d5bb89bba01dbd59f6ae962e33cca3ab615878a80b000ae91e22ae659ee340"
     },
@@ -80,7 +89,7 @@
     },
     {
       "path": "src/site/sir-david-api.ts",
-      "sha256": "ad96cfd9bcc129e786d01b48e3cb880fe325e8892d2900d2fd479806ffa43be8"
+      "sha256": "add32765b526c5bb1093aa0a02503dab496cd6a5a529ed7457be057a7529f559"
     },
     {
       "path": "tsconfig.json",
