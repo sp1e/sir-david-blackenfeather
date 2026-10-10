@@ -28,3 +28,7 @@ Denna första filversion aktiveras bara på Windows. Webbens Admin-inloggning oc
 63 API/DOM-tester,9 adaptertester samt53 bryggtester (inklusive29 nya fil/agent/routefall) passerar lokalt; ett symlinkprivilegetest hoppas över på den här datorn. Riktig Windowsjunction, blockerad mapp-/filrename, blockerad extern writer, versionskonflikter, avbrytning, full lästäckning, återställning, återskapande, scopes och förlorad Admin-behörighet är testade. Fullworker-test använder simulerad CLI och verklig filbroker. Skapade provfiler i OneDrive har verifierat Windowsläsning, skrivning och återställning. Webbtypkontroll och bygge passerar.
 
 Ingen verklig Claude-generering, ny TTS eller ny WebView2-parning har körts. Den nya filåtkomstens Tillåt och ett verkligt uppdrag är separata acceptanssteg efter publicering.
+
+## Skrivbordsprogrammets automatiska ljud
+
+Windowsklient 1.2.0 tillåter automatisk ljuduppspelning för den aktuella privata Admin-vyn och samma webbursprung. Det sparade ljudvalet och Stopp-knappen styr fortfarande uppläsningen. Övriga behörigheter och parningsfönstrets behörigheter är fortsatt nekade. Paketet är byggt och policytestat lokalt; verklig ljuduppspelning och nativeparning återstår att prova.
