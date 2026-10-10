@@ -13,7 +13,7 @@ npm run build
 npm test
 ```
 
-Bygget skapar en portabel ESM-bundle för API-logiken. Testerna använder en tom lokal SQLite-databas och simulerade Ollama- och ElevenLabs-svar. De skickar inga modellprompts eller röstanrop till externa tjänster.
+Bygget skapar en portabel ESM-bundle för API-logiken och en webbläsarbundle från den gemensamma Claude-adaptern. Testerna använder en tom lokal SQLite-databas och simulerade modell- och röstsvar. De skickar inga modellprompts eller röstanrop till externa tjänster.
 
 ## Integration och åtkomst
 
@@ -31,6 +31,8 @@ Vanlig `/admin/` visar korpikonen. Klick öppnar panelen; Escape eller stängkna
 
 ## Exportens gränser
 
-42 API- och DOM-tester passerar i exporten, inklusive Admin-gate, inloggningsretur, ljudlagring, historik, Stopp, mute och sena svar. Kärnmodulen kan byggas och testas självständigt, men drift kräver integrationen ovan. Faktisk ljuduppspelning i browser och WebView2 kräver separat kontroll.
+59 API- och DOM-tester passerar i exporten, inklusive Admin-gate, inloggningsretur, ljudlagring, historik, Stopp, mute, lokal Claude-pipeline och sena svar. Därutöver finns nio adaptertester och 22 tester för den exporterade bryggan. Kärnmodulen kan byggas och testas självständigt, men drift kräver integrationen ovan. Verklig Claude-generering och ljuduppspelning i webbläsare/WebView2 kräver separat kontroll.
+
+Migrering 007 skapar kortlivade, sessionsbundna Claude-turer och ska tillämpas före aktivering av prepare/commit/cancel. Den lokala tjänstens setup-paket ligger i `assets/setup/sp1e-local-agents.zip`; källa och tester finns i `../local-adapter/bridge`. Adapterns kanoniska källa ligger i `../local-adapter/claude-adapter.mjs`. Bygget bevarar exportens egen katalogstruktur.
 
 `EXPORT-MANIFEST.json` anger ursprungscommit och filernas SHA-256. Grafikfilerna är befintliga projektresurser. Den som publicerar projektet ansvarar för att ange deras licens och rättigheter.

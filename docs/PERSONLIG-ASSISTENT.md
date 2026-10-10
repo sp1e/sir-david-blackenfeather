@@ -40,9 +40,9 @@ Servern ska tillhandahålla samma avgränsade samtal, personlighet och uttryckli
 
 Den lokala tjänsten ska inte skriva ett konkurrerande permanent samtalsminne. Ägaren ska kunna märka minnesanteckningar som arbete eller privat och välja vilka som ska ingå i en uppgift. Inga filer eller hela diskar ska läsas in i minnet automatiskt.
 
-## Förberedande kontrakt för lokal Claude-chatt
+## Implementerat kontrakt för lokal Claude-chatt
 
-Detta är ett förslag som webbägaren måste fastställa före implementation:
+Kontraktet är fastställt med webbägaren. Integration och release granskas i sp1e.se PR241:
 
 1. En autentiserad Admin-klient begär förberedelse av en tur med prompt och aktuell samtalsversion. Servern kontrollerar ägarskap och returnerar ett kortlivat tur-ID, fast personlighet, avgränsad historik och valda minnesanteckningar.
 2. Klienten skickar underlaget till en uttryckligen parad lokal tjänst. Tjänsten startar Claude Code med verktyg avstängda för den första chattversionen; inget lokalt filarbete aktiveras genom den anslutningen.
@@ -51,7 +51,7 @@ Detta är ett förslag som webbägaren måste fastställa före implementation:
 
 Parningen ska vara begränsad till rätt Admin-origin och lokal loopbackadress. En parning för chatt får inte samtidigt ge fil-, kommandorads- eller datorstyrningsbehörighet.
 
-Windowsklientens förberedda kod stöder nu ett användarinitierat parningsfönster från Admin till exakt `http://127.0.0.1:4318/__connect/?origin=<kodad aktuell origin>`. Den återanvänder WebView2-miljön för att behålla `window.opener`; andra popupadresser och navigationer nekas. Bygget och 26 lokala självtester passerar. Det verifierar adresspolicyn, inte en verklig parning eller Claude-generering. Denna kod har ännu inte ersatt den installerade appversionen.
+Windowsklientens version 1.1.0 stöder ett användarinitierat parningsfönster från Admin till exakt `http://127.0.0.1:4318/__connect/?origin=<kodad aktuell origin>`. Den återanvänder WebView2-miljön för att behålla `window.opener`; andra popupadresser och navigationer nekas. Bygget och 26 lokala självtester passerar. Det verifierar adresspolicyn, inte en verklig parning eller Claude-generering. Version 1.1.0 är byggd; installation och verklig parning redovisas separat i leveransstatus.
 
 ## Verifiering före aktivering
 

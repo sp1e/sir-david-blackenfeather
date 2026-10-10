@@ -25,7 +25,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 function fixture(t, extra = {}) {
   const sql = new DatabaseSync(':memory:');
   sql.exec('PRAGMA foreign_keys=ON');
-  for (const file of ['schema.sql','site-migration-002-auth-throttle.sql','site-migration-003-portal.sql','site-migration-005-sir-david.sql','site-migration-006-sir-david-audio.sql']) sql.exec(fs.readFileSync(new URL(file, root),'utf8'));
+  for (const file of ['schema.sql','site-migration-002-auth-throttle.sql','site-migration-003-portal.sql','site-migration-005-sir-david.sql','site-migration-006-sir-david-audio.sql','site-migration-007-sir-david-local-claude.sql']) sql.exec(fs.readFileSync(new URL(file, root),'utf8'));
   for (const [id,token] of Object.entries(tokens)) {
     const role = id === 'other' ? 'admin' : id;
     sql.prepare('INSERT INTO site_portal_profiles(id,role,device_hash,created_at) VALUES (?,?,?,?)').run(id,role,'fixture-device-'+id,new Date().toISOString());
@@ -317,4 +317,119 @@ test('latest server history is bounded before the next provider request',async t
   assert.equal(sent.some(item=>item.content.startsWith('old-0 ')),false);
   const saved=(await result.json()).conversation;
   assert.ok(saved.messages.length<=16);assert.deepEqual(saved.messages.slice(0,-1),sent);
+});
+
+const localBody = (text = 'Hello', version = 0) => ({ text, version, provider:'claude' });
+test('revocation and version changes between local preparation read and transaction reserve no turn',async t=>{
+  for (const mutation of [
+    "UPDATE site_portal_profiles SET revoked_at='revoked' WHERE id='admin'",
+    "UPDATE site_companion_conversations SET version=version+1 WHERE owner_id='admin'",
+  ]) {
+    const env=fixture(t), batch=env.DB.batch;
+    env.DB.batch=async statements=>{env.sql.exec(mutation);return batch(statements);};
+    assert.equal((await call(env,'local/prepare',{method:'POST',payload:localBody()})).status,409);
+    assert.equal(leaseCount(env),0);
+    assert.equal(env.sql.prepare('SELECT COUNT(*) n FROM site_companion_local_turns').get().n,0);
+  }
+});
+test('local turns require Admin, current origin and exact fields without any provider call',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  for (const role of [null,'guest','clique']) for (const route of ['local/prepare','local/commit','local/cancel']) {
+    assert.equal((await call(env,route,{role,method:'POST',payload:localBody()})).status,role?403:401);
+  }
+  assert.equal((await call(env,'local/prepare',{method:'POST',payload:localBody(),requestOrigin:'https://foreign.test'})).status,403);
+  for (const addition of [{provider:'codex'},{persona:'override'},{version:-1},{text:'x'.repeat(4001)},{messages:[]}]) {
+    assert.equal((await call(env,'local/prepare',{method:'POST',payload:{...localBody(),...addition}})).status,400);
+  }
+  assert.equal(calls.length,0);assert.equal(quotaCount(env),0);assert.equal(leaseCount(env),0);
+});
+test('local prepare shares server persona and notes; commit persists server user text exactly once',async t=>{
+  const env=fixture(t,{OLLAMA_API_KEY:undefined}),calls=upstream(t);
+  await memory(env,'Remember this');
+  const response=await call(env,'local/prepare',{method:'POST',payload:localBody('Owner request')});
+  assert.equal(response.status,200);
+  const prepared=await response.json();
+  assert.equal(prepared.context.text,'Owner request');assert.deepEqual(prepared.context.messages,[]);
+  assert.deepEqual(prepared.context.memories,['Remember this']);assert.match(prepared.context.persona,/Sir David/);
+  assert.ok(prepared.turn.expiresAt>Date.now() && prepared.turn.expiresAt<=Date.now()+180000);
+  assert.equal(leaseCount(env),1);
+  const payload={turnId:prepared.turn.id,version:0,text:'Local answer'};
+  const saved=await call(env,'local/commit',{method:'POST',payload});
+  assert.equal(saved.status,200);
+  assert.deepEqual((await saved.json()).conversation,{version:1,messages:[{role:'user',content:'Owner request'},{role:'assistant',content:'Local answer'}]});
+  assert.equal((await call(env,'local/commit',{method:'POST',payload})).status,409);
+  assert.equal(leaseCount(env),0);assert.equal(calls.length,0);assert.equal(quotaCount(env),0);
+});
+test('local reservations exclude concurrent preparations and Cloud jobs before provider usage',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  const responses=await Promise.all([1,2].map(()=>call(env,'local/prepare',{method:'POST',payload:localBody()})));
+  assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
+  assert.equal((await call(env,'chat',{method:'POST',payload:{text:'Cloud request',version:0}})).status,409);
+  assert.equal(calls.length,0);assert.equal(quotaCount(env),0);
+  const pending=await responses.find(r=>r.status===200).json();
+  assert.equal((await call(env,'local/cancel',{method:'POST',payload:{turnId:pending.turn.id}})).status,200);
+  env.sql.prepare("INSERT INTO site_companion_leases(owner_id,kind,token,expires_at) VALUES ('admin','chat','cloud',?)").run(Date.now()+120000);
+  assert.equal((await call(env,'local/prepare',{method:'POST',payload:localBody()})).status,409);
+  assert.equal(calls.length,0);
+});
+test('local commit and cancel bind both owner and session, with independent conversations',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  const prepared=await (await call(env,'local/prepare',{method:'POST',payload:localBody()})).json();
+  const payload={turnId:prepared.turn.id,version:0,text:'Answer'};
+  assert.equal((await call(env,'local/commit',{role:'other',method:'POST',payload})).status,409);
+  assert.deepEqual(await (await call(env,'local/cancel',{role:'other',method:'POST',payload:{turnId:prepared.turn.id}})).json(),{cancelled:false});
+  const second='e'.repeat(64);
+  env.sql.prepare('INSERT INTO site_portal_sessions(token_hash,profile_id,created_at) VALUES (?,?,?)').run(hash(second),'admin',new Date().toISOString());
+  assert.equal((await call(env,'local/commit',{method:'POST',payload,headers:{cookie:'__Host-sp1e_session='+second}})).status,409);
+  assert.equal((await call(env,'local/commit',{method:'POST',payload})).status,200);
+  assert.equal(calls.length,0);
+});
+test('clear and expiry cannot resurrect local history, stale reservations permit a fresh turn',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  const prepared=await (await call(env,'local/prepare',{method:'POST',payload:localBody()})).json();
+  assert.equal((await call(env,'conversation',{method:'DELETE',payload:{version:0}})).status,200);
+  assert.equal((await call(env,'local/commit',{method:'POST',payload:{turnId:prepared.turn.id,version:0,text:'Too late'}})).status,409);
+  const next=await (await call(env,'local/prepare',{method:'POST',payload:localBody('Next',1)})).json();
+  env.sql.prepare('UPDATE site_companion_local_turns SET expires_at=0').run();
+  assert.equal((await call(env,'local/commit',{method:'POST',payload:{turnId:next.turn.id,version:1,text:'Expired'}})).status,409);
+  assert.deepEqual((await (await call(env,'conversation')).json()).conversation,{version:1,messages:[]});
+  assert.equal((await call(env,'local/prepare',{method:'POST',payload:localBody('Retry',1)})).status,200);
+  assert.equal(calls.length,0);
+});
+test('cancel releases the exact local reservation and suppresses its late result',async t=>{
+  const env=fixture(t);
+  const prepared=await (await call(env,'local/prepare',{method:'POST',payload:localBody()})).json();
+  const payload={turnId:prepared.turn.id};
+  assert.deepEqual(await (await call(env,'local/cancel',{method:'POST',payload})).json(),{cancelled:true});
+  assert.equal(leaseCount(env),0);
+  assert.deepEqual(await (await call(env,'local/cancel',{method:'POST',payload})).json(),{cancelled:false});
+  assert.equal((await call(env,'local/commit',{method:'POST',payload:{...payload,version:0,text:'Late'}})).status,409);
+  assert.equal((await call(env,'local/prepare',{method:'POST',payload:localBody()})).status,200);
+});
+test('revocation after the request guard is rechecked inside the local commit transaction',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  const prepared=await (await call(env,'local/prepare',{method:'POST',payload:localBody()})).json();
+  const batch=env.DB.batch;
+  env.DB.batch=async statements=>{
+    env.sql.prepare("UPDATE site_portal_sessions SET revoked_at=? WHERE profile_id='admin'").run(new Date().toISOString());
+    return batch(statements);
+  };
+  assert.equal((await call(env,'local/commit',{method:'POST',payload:{turnId:prepared.turn.id,version:0,text:'Revoked'}})).status,409);
+  assert.equal(env.sql.prepare("SELECT version FROM site_companion_conversations WHERE owner_id='admin'").get().version,0);
+  assert.equal(calls.length,0);
+});
+test('local history and notes stay bounded and client-supplied memory and oversized replies are rejected',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  await call(env,'conversation');
+  const history=Array.from({length:16},(_,i)=>({role:i%2?'assistant':'user',content:'x'.repeat(4000)}));
+  env.sql.prepare("UPDATE site_companion_conversations SET messages_json=? WHERE owner_id='admin'").run(JSON.stringify(history));
+  for(let i=0;i<30;i++) await memory(env,'x'.repeat(1000));
+  const prepared=await (await call(env,'local/prepare',{method:'POST',payload:localBody()})).json();
+  assert.ok(prepared.context.messages.length<=14);
+  assert.ok(prepared.context.messages.reduce((sum,m)=>sum+m.content.length,prepared.context.text.length)<=16000);
+  assert.ok(JSON.stringify(prepared.context.memories).length<=20000);
+  for(const extra of [{text:'x'.repeat(12001)},{memories:['injected']}]) {
+    assert.equal((await call(env,'local/commit',{method:'POST',payload:{turnId:prepared.turn.id,version:0,text:'Answer',...extra}})).status,400);
+  }
+  assert.equal(calls.length,0);
 });

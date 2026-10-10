@@ -1,57 +1,29 @@
-# Förberedd Claude-anslutning
+# Claude Code genom Sir David
 
-Status: isolerad adapter med mocktester. Den laddas inte av Admin och är inte en aktiverad motor. Webbägaren fastställer slutliga endpoint- och migrationsnamn före integration. Den befintliga bryggan behöver dessutom rapportera verifierad abonnemangsanvändning; dagens allmänna `signedIn` räcker inte för att lova rätt debiteringsväg.
+Klient och adapter är implementerade. Webbägaren granskar och integrerar server, migration och lokal brygga i sp1e.se PR241. Mocktester innebär inte att verklig parning eller generering har verifierats.
 
-## Föreslagna serveranrop
+## Gemensam konversation
 
-`POST /api/sir-david/local/prepare`, endast aktuell Admin-session och tillåten origin:
+Admin begär `POST /api/sir-david/local/prepare` med `{text, version, provider:"claude"}`. Texten får vara högst 4 000 tecken. Servern returnerar `{turn:{id,version,expiresAt},context:{persona,text,messages,memories}}`. Turens UUID binds till ägare, aktuell Admin-session och konversationsversion, med högst tre minuters giltighet. Bara en aktiv tur per ägare tillåts, med gemensam spärr för lokal och molngenererad chatt.
 
-```json
-{"text":"Användarens meddelande","version":2,"provider":"claude"}
-```
+Personlighet, historik och uttryckliga minnesanteckningar kommer från servern. Persona begränsas till 6 000 tecken, historik till 15 meddelanden och sammanlagt 16 000 tecken, minne till 100 anteckningar om högst 1 000 tecken vardera och 20 000 tecken som JSON. Förberedelsen använder ingen modell eller uppläsning.
 
-Servern validerar en prompt på högst 4 000 tecken och aktuell konversationsversion. Den skapar ett oförutsägbart engångs-ID med cirka tre minuters giltighet, bundet till ägare, aktuell autentiserad session och version. Underlaget kommer från serverns fasta Sir David-profil, gemensamma konversation och uttryckliga minnesanteckningar. Klienten får inte själv ange persona eller välja annan ägares minne.
+Efter generering skickas `POST /api/sir-david/local/commit` med `{turnId,version,text}`. Svaret begränsas till 12 000 tecken. Servern kontrollerar session, ägare, giltighet, engångsanvändning och version atomärt och sparar den förberedda användartexten med svaret. Den returnerar `{text,conversation:{version,messages}}`, samma format som molnchatten. Klienten kan inte skriva över historik, persona eller minne. Servern kan kontrollera turen men kan inte bevisa vilken modell som skapade texten på klienten.
 
-```json
-{
-  "turn":{"id":"11111111-1111-4111-8111-111111111111","version":2,"expiresAt":1791663000000},
-  "context":{
-    "persona":"Serverns fasta Sir David-personlighet",
-    "text":"Användarens meddelande",
-    "messages":[{"role":"user","content":"Tidigare fråga"},{"role":"assistant","content":"Tidigare svar"}],
-    "memories":["Uttryckligen sparad anteckning"]
-  }
-}
-```
+`POST /api/sir-david/local/cancel` med `{turnId}` frigör turen. Klienten använder en separat avbrytning för detta städanrop. Versionskonflikt behåller utkastet. Sena svar efter avbrytning eller förlorad Admin-behörighet visas eller läses inte upp.
 
-Historiken begränsas till 15 meddelanden och 16 000 tecken. Persona begränsas till 6 000 tecken och anteckningarnas JSON till 20 000. Prepare använder ingen modell eller TTS. Servern behöver en gräns för antal väntande turer och regelbunden borttagning av utgångna turer.
+## Lokal anslutning
 
-`POST /api/sir-david/local/commit`, åter med aktuell Admin-session och tillåten origin:
+Parningstoken finns bara i instansminnet, aldrig i webbläsarlagring. Parning tillåts från `https://sp1e.se` och `https://www.sp1e.se` till exakt `http://127.0.0.1:4318/__connect/?origin=<kodad origin>`. Meddelandet måste komma från den öppnade popupens WindowProxy och exakt loopback-origin. Frånkoppling raderar token, avbryter uppgift/parning och återkallar bryggsessionen.
 
-```json
-{"turnId":"11111111-1111-4111-8111-111111111111","version":2,"text":"Claude-svaret"}
-```
+Status kontrolleras via `/__agents/status?provider=claude&kind=sir-david`. Bryggan rapporterar `billingMode:"subscription"` först efter kontroll av Claude-inloggning i samma avgränsade miljö som den kommande processen. API- och alternativa providerinställningar får inte ersätta den valda inloggningen. Hanterade organisationsregler behålls. Detta visar abonnemangsvägen; kontots kvoter och eventuell extra användning gäller fortfarande.
 
-Servern kontrollerar ägar- och sessionsbindning, giltighetstid, att turen inte förbrukats och samma konversationsversion. Svaret begränsas till 12 000 tecken. Den sparar prepare-turens användarmeddelande och återfört assistantsvar med atomär versionskontroll, förbrukar turen och returnerar samma konversations-DTO som dagens chat-route. En clear, annan avslutad tur, återkallad session, replay eller utgången tur ska ge konflikt eller nekad åtkomst utan att återuppliva historik. Slutlig SQL ska verifieras i värdens D1-testmiljö; en processlokal flagga är inte tillräcklig.
+Jobbet innehåller `provider:"claude"`, `kind:"sir-david"`, `prompt`, `messages`, `persona` och `notes` som en array. Valfria `model` och `effort` väljs från bryggans aktuella metadata. Standardval utelämnar fälten. En tidigare vald modell som försvunnit stoppar uppgiften. Fable visar information om extra krediter. Ingen automatisk övergång till molnmodell eller API-nyckel sker.
 
-En lokal modelloutput är data. Commit får inte acceptera verktygsanrop, SQL, ändrad persona eller minnesskrivningar. Servern kan verifiera ägare och tur, men kan inte bevisa att texten skapats av Claude på klienten.
+Claude körs med Sir Davids fasta instruktioner, verktyg avstängda, strikt tom MCP-konfiguration och utan lokalt permanent samtalsminne. Historik och anteckningar är underlag. Parningen ger ingen lokal fil- eller datorstyrning; dessa verktyg är nästa utvecklingsfas.
 
-## Lokal adapter
-
-`ClaudeAdapter` behåller pairing-token i privat instansminne. `pair()` accepterar endast meddelande från den öppnade popupens WindowProxy och exakt loopback-origin. `answer()` validerar prepare-underlaget, kontrollerar lokal Claude-status och skickar endast ett `provider:claude, kind:chat`-uppdrag till den befintliga bryggan. Den gör ingen automatisk fallback. Avbrytning stoppar bara den aktuella lokala uppgiften och nekar ett sent resultat. `disconnect()` raderar token och återkallar bryggsessionen.
-
-Adaptern använder den allmänna bryggans kontextfält för persona och anteckningar. Värden ska granska hur den befintliga fasta tools-off-systemprompten samverkar med Sir Davids persona. Ett separat Sir David-kind kan vara lämpligt om personan behöver ligga i systemprompten. Det kräver då en uttrycklig, avgränsad bryggändring.
-
-Föreslaget tillägg i status för vald Claude-motor:
-
-```json
-{"id":"claude","installed":true,"signedIn":true,"billingMode":"subscription"}
-```
-
-Bryggan får rapportera `subscription` först när den har verifierat den vanliga Claude-inloggningen och förhindrat ärvd API-konfiguration eller annan betalväg från att ersätta den för denna körning. Inga nyckelvärden ska visas eller skickas till webbservern. Den nuvarande adaptern nekar start när fältet saknas; det är en avsiktlig integrationsspärr, inte ett nytt bevis om aktuell bryggdebitering.
-
-Första versionen använder CLI:s valda standardmodell. Modell- och resonemangsval kan läggas till enligt webbägarens aktuella allowlist. Bryggan behåller verktyg avstängda, strikt tom MCP-konfiguration och tillfällig arbetsmapp. Lokal filåtkomst och datorstyrning ingår inte i detta kontrakt.
+Efter sparat svar används den gemensamma ElevenLabs-rösten enligt ägarens sparade ljudinställning. Stopp avbryter uppläsningen; Avbryt svar avbryter modelluppgiften.
 
 ## Verifiering
 
-Kör `node --test local-adapter/claude-adapter.test.mjs`. Nio mocktester täcker underlagsgränser, pairing-origin och fönsterkälla, utebliven debiteringsbekräftelse, lyckad commit-DTO, avbrytning under statuskontroll och vid sent svar, frånkoppling, återkallad väntande parning och för stort svar. De förbrukar inga Claude- eller ElevenLabs-krediter. Faktisk parning, Claude-generering och sparande genom det kommande host-kontraktet återstår före aktivering.
+`node --test local-adapter/claude-adapter.test.mjs` kör nio adaptertester. Webbens nya DOM-tester kör den faktiska genererade adaptern och hela prepare–jobb–commit-flödet med simulerade tjänster. De täcker avbrytning, sena svar, versionskonflikt, förlorad behörighet under städning, modellmetadata och utebliven abonnemangsbekräftelse. Inga Claude- eller ElevenLabs-krediter används. Verklig parning och generering verifieras separat efter integration.

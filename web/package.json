@@ -7,9 +7,9 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "test": "node --test scripts/sir-david.test.mjs scripts/sir-david-ui.test.mjs",
+    "test": "node --test --test-timeout=10000 scripts/sir-david.test.mjs scripts/sir-david-ui.test.mjs scripts/sir-david-claude-ui.test.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
-    "build": "esbuild src/site/sir-david-api.ts --bundle --format=esm --platform=neutral --outfile=build/sir-david-api.js"
+    "build": "node scripts/build.mjs"
   },
   "devDependencies": {
     "jsdom": "29.1.1",

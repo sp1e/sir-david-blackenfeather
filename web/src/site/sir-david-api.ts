@@ -1,4 +1,5 @@
 import { assertPortalOrigin, PortalError, requirePortalAdmin, type PortalEnv } from './portal-session';
+import { cancelLocalTurn, commitLocalTurn, prepareLocalTurn } from './sir-david-local';
 
 interface SirDavidEnv extends PortalEnv {
   OLLAMA_API_KEY?: string;
@@ -110,6 +111,21 @@ export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, 
     if (request.headers.has('Origin') || !['GET', 'HEAD'].includes(request.method)) assertPortalOrigin(request);
     if (request.headers.get('sec-fetch-site') === 'cross-site') throw new PortalError(403, 'Anropet är inte tillåtet.');
     const owner = session.profileId;
+    if (route === 'local/prepare' && request.method === 'POST') {
+      const input = await body(request, ['text', 'version', 'provider']);
+      if (input.provider !== 'claude') throw new PortalError(400, 'Välj lokal Claude Code.');
+      const content = text(input.text, 4000), expected = version(input.version);
+      const configured = await profile(env), saved = await memories(env, owner);
+      return json(await prepareLocalTurn(env, session, expected, content, configured.persona, saved.map(row => row.content)));
+    }
+    if (route === 'local/commit' && request.method === 'POST') {
+      const input = await body(request, ['turnId', 'version', 'text']);
+      return json(await commitLocalTurn(env, session, input.turnId, version(input.version), text(input.text, 12000)));
+    }
+    if (route === 'local/cancel' && request.method === 'POST') {
+      const input = await body(request, ['turnId']);
+      return json(await cancelLocalTurn(env, session, input.turnId));
+    }
     if (route === 'preferences' && request.method === 'GET') return json({ preferences: await preferences(env, owner) });
     if (route === 'preferences' && request.method === 'PUT') {
       const input = await body(request, ['autoSpeak', 'version']);

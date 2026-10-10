@@ -14,8 +14,8 @@ function fixture(route) {
 }
 test('bounded input fixes Claude chat and preserves shared persona/history/notes',()=>{
   const request=localRequest(prepared(),NOW);
-  assert.equal(request.provider,'claude');assert.equal(request.kind,'chat');
-  assert.equal(JSON.parse(request.context).persona,prepared().context.persona);
+  assert.equal(request.provider,'claude');assert.equal(request.kind,'sir-david');
+  assert.equal(request.persona,prepared().context.persona);assert.deepEqual(request.notes,prepared().context.memories);
   assert.deepEqual(request.messages,prepared().context.messages);assert.equal(request.current,undefined);
   for(const change of [p=>p.turn.expiresAt=NOW,p=>p.turn.version=-1,p=>p.context.messages[0].role='system',p=>p.context.text='x'.repeat(4001),p=>p.context.memories=['x'.repeat(1001)]]) {const p=prepared();change(p);assert.throws(()=>localRequest(p,NOW));}
 });
@@ -33,7 +33,7 @@ test('unverified billing never starts a job or silently selects another provider
   assert.equal(f.calls.filter(c=>c.url?.endsWith('/jobs')).length,0);
 });
 test('successful local reply returns only commit DTO and uses no browser credentials',async()=>{
-  const f=fixture(url=>url.endsWith('/status') ? json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]}) : url.endsWith('/jobs') ? json({id:'job_123456789',state:'running'},202) : json({state:'done',result:{text:'A dry reply.'}}));await f.pair();
+  const f=fixture(url=>url.includes('/status?') ? json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]}) : url.endsWith('/jobs') ? json({id:'job_123456789',state:'running'},202) : json({state:'done',result:{text:'A dry reply.'}}));await f.pair();
   assert.deepEqual(await f.adapter.answer(prepared()),{turnId:prepared().turn.id,version:2,text:'A dry reply.'});
   for(const c of f.calls.filter(c=>c.url)) {assert.equal(c.options.credentials,'omit');assert.equal(c.options.headers['X-Sp1e-Session'],'t'.repeat(43));}
   assert.equal(f.calls.filter(c=>c.url?.endsWith('/jobs')).length,1);
@@ -41,7 +41,7 @@ test('successful local reply returns only commit DTO and uses no browser credent
 test('aborted polling cancels only this job and does not return late text',async()=>{
   const controller=new AbortController();
   const f=fixture(url=>{
-    if(url.endsWith('/status')) return json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]});
+    if(url.includes('/status?')) return json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]});
     if(url.endsWith('/jobs')) return json({id:'job_123456789'});
     if(url.endsWith('/cancel')) return json({cancelled:true});
     controller.abort();return json({state:'done',result:{text:'Late reply'}});
@@ -66,6 +66,6 @@ test('disconnect closes a pending pairing window and prevents late reconnection'
   assert.equal(f.popup.closed,true);assert.equal(f.adapter.connected,false);
 });
 test('oversized output is rejected and cancelled before commit',async()=>{
-  const f=fixture(url=>url.endsWith('/status') ? json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]}) : url.endsWith('/jobs') ? json({id:'job_123456789'}) : url.endsWith('/cancel') ? json({cancelled:true}) : json({state:'done',result:{text:'x'.repeat(12001)}}));await f.pair();
+  const f=fixture(url=>url.includes('/status?') ? json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]}) : url.endsWith('/jobs') ? json({id:'job_123456789'}) : url.endsWith('/cancel') ? json({cancelled:true}) : json({state:'done',result:{text:'x'.repeat(12001)}}));await f.pair();
   await assert.rejects(f.adapter.answer(prepared()),/stort/);assert.equal(f.calls.filter(c=>c.url?.endsWith('/cancel')).length,1);
 });

@@ -75,6 +75,7 @@ internal sealed class CompanionWindow : Form
     private readonly ToolStripButton home = new("Sir David");
     private readonly ToolStripButton reload = new("Ladda om");
     private readonly ToolStripButton pin = new("Överst") { CheckOnClick = true };
+    private readonly ToolStripButton openWeb = new("Öppna i webbläsaren");
     private readonly ToolStripLabel status = new("Ansluter till privat Admin…");
     private readonly string preferencesPath = Path.Combine(Program.StateDirectory, "window.json");
     private AppConfig? config;
@@ -90,12 +91,16 @@ internal sealed class CompanionWindow : Form
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(13, 22, 18);
         TopMost = pin.Checked = preferences.AlwaysOnTop;
-        toolbar.Items.AddRange([home, reload, pin, new ToolStripSeparator(), status]);
+        toolbar.Items.AddRange([home, reload, pin, openWeb, new ToolStripSeparator(), status]);
         Controls.Add(browser);
         Controls.Add(toolbar);
         home.Click += (_, _) => { if (config is not null && browser.CoreWebView2 is not null) browser.CoreWebView2.Navigate(config.StartUrl); };
         reload.Click += (_, _) => browser.CoreWebView2?.Reload();
         pin.CheckedChanged += (_, _) => TopMost = pin.Checked;
+        openWeb.Click += (_, _) => {
+            try { if (config is not null) System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(config.StartUrl) { UseShellExecute = true }); }
+            catch { status.Text = "Kunde inte öppna webbläsaren"; }
+        };
         Shown += async (_, _) => await InitializeBrowser();
         FormClosing += (_, _) => {
             var size = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;

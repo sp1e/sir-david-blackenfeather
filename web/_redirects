@@ -2,3 +2,4 @@
 /admin.html /admin/index.html      200
 /site-migration-005-sir-david.sql / 301
 /site-migration-006-sir-david-audio.sql / 301
+/site-migration-007-sir-david-local-claude.sql /404.html 404

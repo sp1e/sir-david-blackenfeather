@@ -7,6 +7,56 @@
   let initialized = false, initializing = false;
   let autoSpeak = false, preferencesReady = false, preferencesBusy = false, preferenceRevision = -1, voicePlayer = null, preferencesFailed = false;
   const silentAudio = new URL('/admin/assets/silence.wav', window.location.origin).href;
+  let localReady = false, localConnecting = false, localModels = [], pairController = null;
+  // Unsupported preview origins must not stop the existing cloud companion.
+  let localAdapter = null;
+  if (window.SirDavidLocal) {
+    try { localAdapter = new window.SirDavidLocal.ClaudeAdapter({ origin: window.location.origin }); }
+    catch { /* Pairing remains limited to the approved production origins. */ }
+  }
+  const isLocal = () => $('provider').value === 'claude';
+  const canChat = () => authorized && (isLocal() ? localReady && localAdapter?.connected : connected);
+  function connectionStatus() {
+    $('connection').textContent = (isLocal() ? localConnecting ? 'Ansluter Claude Code…' : localReady && localAdapter?.connected ? 'Claude Code anslutet · lokalt' : 'Claude Code väntar på anslutning' : connected ? 'Ollama Cloud anslutet' : 'Ollama Cloud väntar på anslutning') + ' · ' + (speechConnected ? 'Din röst är ansluten' : 'Rösten väntar på en servernyckel');
+  }
+  function claudeEfforts() {
+    const prior = $('claude-effort').value, levels = localModels.find(item => item.id === $('claude-model').value)?.efforts ?? [];
+    $('claude-effort').replaceChildren(new Option('Standardnivå', ''));
+    const names = { low: 'Låg', medium: 'Mellan', high: 'Hög', xhigh: 'Mycket hög', max: 'Max' };
+    for (const level of levels) if (Object.hasOwn(names, level)) $('claude-effort').append(new Option(names[level], level));
+    if (levels.includes(prior)) $('claude-effort').value = prior;
+    $('claude-effort').disabled = busy || !localReady || levels.length === 0;
+    $('claude-note').textContent = $('claude-model').value === 'fable' ? 'Fable kan använda extrakrediter enligt ditt Claude-kontos villkor.' : 'Använder din Claude-inloggning och dess användningsgränser. Datorn behöver vara igång.';
+  }
+  async function verifyClaude(signal) {
+    if (!localAdapter?.connected) throw Error('Anslut Claude Code först.');
+    const value = await localAdapter.status(signal), provider = value.providers?.find(item => item.id === 'claude');
+    if (signal?.aborted || !authorized) throw new DOMException('Avbrutet', 'AbortError');
+    if (!provider?.installed || !provider.signedIn || provider.billingMode !== 'subscription') {
+      localReady = false; update(); throw Error('Claude-inloggningen kunde inte verifieras. Uppdatera och starta om den lokala anslutningen.');
+    }
+    const selected = $('claude-model').value, effort = $('claude-effort').value;
+    localModels = Array.isArray(provider.models) ? provider.models.filter(item => item && typeof item.id === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(item.id) && typeof item.name === 'string' && Array.isArray(item.efforts)) : [];
+    $('claude-model').replaceChildren(new Option('Claudes standardmodell', ''));
+    for (const item of localModels) $('claude-model').append(new Option(item.name.slice(0, 100), item.id));
+    const choice = localModels.find(item => item.id === selected);
+    if (choice) $('claude-model').value = selected;
+    localReady = true; claudeEfforts(); update();
+    if (selected && (!choice || (effort && !choice.efforts.includes(effort)))) throw Error('Det tidigare modellvalet är inte tillgängligt. Välj modell och nivå igen.');
+  }
+  $('provider').addEventListener('change', () => { cancelSpeech(); $('claude-options').hidden = !isLocal(); $('model').hidden = isLocal(); update(); });
+  $('claude-model').addEventListener('change', claudeEfforts);
+  $('connect-claude').addEventListener('click', async () => {
+    if (busy || !authorized) return;
+    if (localConnecting) { pairController?.abort(); return; }
+    if (localAdapter?.connected) { localReady = false; await localAdapter.disconnect(); update(); return; }
+    if (!localAdapter) { $('status').textContent = 'Lokal Claude ansluts från sp1e.se. Öppna din Admin-sida där.'; return; }
+    localConnecting = true; pairController = new AbortController(); update(); $('status').textContent = 'Godkänn anslutningen i det lokala fönstret.';
+    try { await localAdapter.pair({ signal: pairController.signal }); await verifyClaude(pairController.signal); $('status').textContent = 'Claude Code är anslutet. Sir David använder samma minne och röst.'; }
+    catch (error) { localReady = false; await localAdapter.disconnect(); $('status').textContent = error.name === 'AbortError' ? 'Anslutningen avbröts.' : error.message; }
+    finally { localConnecting = false; pairController = null; update(); }
+  });
+  $('stop-chat').addEventListener('click', () => { epoch++; controller?.abort(); cancelSpeech(); $('status').textContent = 'Avbryter svaret…'; update(); });
   function setPanel(open, syncUrl = true) {
     $('sir-david-panel').hidden = !open;
     $('admin-launcher').hidden = open;
@@ -22,7 +72,7 @@
       if (!initialized && !initializing) init();
       $('close-sir-david').focus();
     } else {
-      epoch++; controller?.abort(); cancelSpeech();
+      epoch++; controller?.abort(); pairController?.abort(); cancelSpeech();
       $('open-sir-david').focus();
     }
   }
@@ -33,14 +83,28 @@
   async function api(route, options = {}) {
     const response = await fetch('/api/sir-david/' + route, { credentials: 'same-origin', cache: 'no-store', ...options });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) { authorized = false; connected = false; speechConnected = false; cancelSpeech(); $('messages').replaceChildren(); $('memories').replaceChildren(); history = []; update(); }
+      if (response.status === 401 || response.status === 403) { authorized = false; connected = false; speechConnected = false; localReady = false; pairController?.abort(); controller?.abort(); localAdapter?.disconnect(); cancelSpeech(); $('messages').replaceChildren(); $('memories').replaceChildren(); history = []; update(); }
       const data = await response.json().catch(() => ({}));
       throw Error(data.error || 'Anropet kunde inte slutföras.');
     }
     return response;
   }
   const post = (route, body, signal) => api(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
-  function update() { $('send').disabled = busy || !connected; $('model').disabled = busy || !connected; $('prompt').disabled = busy; $('new-chat').disabled = !authorized; $('reload-chat').disabled = busy || !authorized; $('save-memory').disabled = !authorized; $('sound-toggle').disabled = !authorized || !preferencesReady || preferencesBusy; $('sound-toggle').textContent = !preferencesReady ? 'Läser ljudval…' : autoSpeak ? 'Ljud på' : 'Ljud av'; $('sound-toggle').setAttribute('aria-pressed', String(autoSpeak)); document.querySelectorAll('.listen-button').forEach(button => { button.disabled = !autoSpeak || speechBusy; }); }
+  function update() {
+    $('send').disabled = busy || !canChat(); $('model').disabled = busy || !connected;
+    $('provider').disabled = busy || localConnecting || !authorized;
+    $('claude-model').disabled = busy || !localReady;
+    $('claude-effort').disabled = busy || !localReady || !localModels.find(item => item.id === $('claude-model').value)?.efforts.length;
+    $('connect-claude').disabled = busy || !authorized;
+    $('connect-claude').textContent = localConnecting ? 'Avbryt anslutning' : localAdapter?.connected ? 'Koppla från Claude' : 'Anslut Claude';
+    $('stop-chat').hidden = !busy; $('stop-chat').disabled = Boolean(controller?.signal.aborted);
+    $('prompt').disabled = busy; $('new-chat').disabled = !authorized; $('reload-chat').disabled = busy || !authorized; $('save-memory').disabled = !authorized;
+    $('sound-toggle').disabled = !authorized || !preferencesReady || preferencesBusy;
+    $('sound-toggle').textContent = !preferencesReady ? 'Läser ljudval…' : autoSpeak ? 'Ljud på' : 'Ljud av';
+    $('sound-toggle').setAttribute('aria-pressed', String(autoSpeak));
+    document.querySelectorAll('.listen-button').forEach(button => { button.disabled = !autoSpeak || speechBusy; });
+    if (authorized) connectionStatus();
+  }
   function stopAudio() { if (audio) { audio.pause(); audio = null; } if (audioUrl) { URL.revokeObjectURL(audioUrl); audioUrl = null; } }
   function cancelSpeech() { speechEpoch++; speechController?.abort(); speechController = null; speechBusy = false; stopAudio(); $('stop-speech').hidden = true; }
   $('stop-speech').addEventListener('click', () => { cancelSpeech(); update(); $('status').textContent = 'Rösten är stoppad.'; });
@@ -145,14 +209,28 @@
       }); row.append(paragraph, remove); $('memories').append(row);
     }
   }
+  async function localChat(content, signal, ownEpoch) {
+    let turn;
+    try {
+      await verifyClaude(signal);
+      const prepared = await (await post('local/prepare', { text: content, version: revision, provider: 'claude' }, signal)).json();
+      turn = prepared.turn;
+      if (signal.aborted || ownEpoch !== epoch || !authorized) throw new DOMException('Avbrutet', 'AbortError');
+      const answer = await localAdapter.answer(prepared, { signal, model: $('claude-model').value, effort: $('claude-effort').value });
+      if (signal.aborted || ownEpoch !== epoch || !authorized) throw new DOMException('Avbrutet', 'AbortError');
+      return await (await post('local/commit', answer, signal)).json();
+    } finally {
+      if (turn?.id) await api('local/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ turnId: turn.id }), signal: AbortSignal.timeout(15_000), keepalive: true }).catch(() => {});
+    }
+  }
   $('chat-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (busy || !connected) return;
+    event.preventDefault(); if (busy || !canChat()) return;
     const content = $('prompt').value.trim(); if (!content) return;
     cancelSpeech(); if (autoSpeak) primeAudio();
     busy = true; controller = new AbortController(); const ownEpoch = epoch; update(); $('status').textContent = 'Sir David funderar…';
     try {
-      const data = await (await post('chat', { model: $('model').value, text: content, version: revision }, controller.signal)).json();
-      if (ownEpoch !== epoch) return;
+      const data = isLocal() ? await localChat(content, controller.signal, ownEpoch) : await (await post('chat', { model: $('model').value, text: content, version: revision }, controller.signal)).json();
+      if (ownEpoch !== epoch || !authorized) return;
       renderConversation(data.conversation); $('prompt').value = ''; $('status').textContent = '';
       if (!preferencesFailed) await refreshPreferences();
       if (ownEpoch === epoch && autoSpeak && !preferencesBusy && !preferencesFailed) {
@@ -160,7 +238,7 @@
         if (reply?.role === 'assistant') speakContent(reply.content);
       }
     } catch (error) { if (ownEpoch === epoch) $('status').textContent = error.name === 'AbortError' ? 'Anropet avbröts.' : error.message; }
-    finally { busy = false; controller = null; update(); }
+    finally { busy = false; controller = null; if ($('status').textContent === 'Avbryter svaret…') $('status').textContent = 'Svaret avbröts.'; update(); }
   });
   $('new-chat').addEventListener('click', async () => {
     if (!confirm('Radera det gemensamma samtalet? Sparade minnesanteckningar behålls.')) return;
@@ -174,7 +252,7 @@
     catch (error) { $('memory-status').textContent = error.message; }
     finally { $('save-memory').disabled = !authorized; }
   });
-  window.addEventListener('pagehide', () => { epoch++; controller?.abort(); cancelSpeech(); history = []; });
+  window.addEventListener('pagehide', () => { epoch++; controller?.abort(); pairController?.abort(); localAdapter?.disconnect(); cancelSpeech(); history = []; });
   async function init() {
     initializing = true;
     try {

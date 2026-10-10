@@ -2,9 +2,10 @@
   "sourceRepository": "https://github.com/sp1e/sp1e.se",
   "sourceCommit": "69a9f357101a391677dc0753aeb94ffde75db61e",
   "adaptations": [
-    "API tests omit two host middleware/login integration cases; original cases stay in sp1e.se.",
     "schema.sql contains only the sessions fixture prerequisite; no unrelated application tables.",
-    "Owner-reviewed automatic speech files and additional auth-gate test dependencies copied from PR240 commit 1829fb311d74aae09d50b9ad202a9dce106e5d63. _redirects contains the relevant Admin and Sir David SQL rules only; other website routes are excluded."
+    "Owner-reviewed automatic speech files and additional auth-gate test dependencies copied from PR240 commit 1829fb311d74aae09d50b9ad202a9dce106e5d63. _redirects contains the relevant Admin and Sir David SQL rules only; other website routes are excluded.",
+    "Claude host API tests are now copied intact with existing portal/session fixture dependencies. Canonical adapter lives in ../local-adapter; the export retains its own build script for that layout. The local bridge and source tests are exported separately; its setup ZIP is copied exactly from the reviewed host commit.",
+    "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved."
   ],
   "files": [
     {
@@ -13,7 +14,7 @@
     },
     {
       "path": "_redirects",
-      "sha256": "e99bfdd0f0a51a3ddaea28ba298fd58ebd9bb3c7d08ae77487446f85ebba309b"
+      "sha256": "cd13b9874061351e7b0331aece6da492729467b13ab251bea01d9bd7b7c607aa"
     },
     {
       "path": "admin/assets/raven-idle.png",
@@ -24,8 +25,12 @@
       "sha256": "55006117b5f1c40e8a7f00497ea6bfb14a433eb19c32cb74fd09d853c1aa81ee"
     },
     {
+      "path": "admin/claude-adapter.js",
+      "sha256": "5fc3b30d1e159ad8562708cfb16926887f69dadf897935d557d1b9c5cf4a836c"
+    },
+    {
       "path": "admin/index.html",
-      "sha256": "22f21949144aaff51c62fcc19f077bfffc41f60c8b2cafdd36bbf76997b0b2ca"
+      "sha256": "26a56c3661f0be84cd8e2690ff7cf33c418acbaaf7c4518a7f9e91e80fe00dc7"
     },
     {
       "path": "admin/sir-david.css",
@@ -33,11 +38,15 @@
     },
     {
       "path": "admin/sir-david.js",
-      "sha256": "44199d212dd02ee4a8a06c8be03784a475126ca8cd8712755567355187350ddf"
+      "sha256": "fb65a0d8c5b9abf7f2fee1d2cb827d250ba0bbd3b63bd46c472684511ce954bc"
     },
     {
       "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
       "sha256": "9634fefbc2f4634d232845b8cb6d35288e8fa83f8eccddfbca7d4a34dd9fffb6"
+    },
+    {
+      "path": "assets/setup/sp1e-local-agents.zip",
+      "sha256": "ad2f3ed5cc0778c1e375ed3be61b7add00671a7fa9707c2728b586e2b07b38f4"
     },
     {
       "path": "functions/api/sir-david/[[route]].ts",
@@ -49,7 +58,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "f7c2590a4b74efc64a41c1d3bc306677b5b020245320ccd1e72ef2762adb2dc1"
+      "sha256": "123854b79bbc0601fa6e360e8688e4846305785ba64763d703e39b1c4156d1c7"
     },
     {
       "path": "portal/portal.js",
@@ -57,11 +66,19 @@
     },
     {
       "path": "README.md",
-      "sha256": "04972577902b9e88f81265e89cb95e68807ecf1c1567e8698d1ade0505bf741d"
+      "sha256": "4eeceb5928ae58a52fa0ce19d105ded5427a0e9c94d5c0440655b4839a2e98c1"
     },
     {
       "path": "schema.sql",
       "sha256": "449b731170f7542181a331576034d350122827aa170cfd34a87c01cf6852afb3"
+    },
+    {
+      "path": "scripts/build.mjs",
+      "sha256": "8d1fbb0296f4b566a57cb521a2501c15efdc1f281855c9cbf144994f90b57425"
+    },
+    {
+      "path": "scripts/sir-david-claude-ui.test.mjs",
+      "sha256": "04f1f19fc00ab85bac081c6d50150a5257f2b1f7a8c69da93f01f287567ae87e"
     },
     {
       "path": "scripts/sir-david-ui.test.mjs",
@@ -69,7 +86,7 @@
     },
     {
       "path": "scripts/sir-david.test.mjs",
-      "sha256": "b3cc97920af036b7a0673bd1dc0047ebbf929f6c51351e7e76f0dfaf7d9be539"
+      "sha256": "ddae828e0522289a279b0dee3886162361f1804e883ea95e64d42f22565d09e1"
     },
     {
       "path": "site-migration-002-auth-throttle.sql",
@@ -86,6 +103,10 @@
     {
       "path": "site-migration-006-sir-david-audio.sql",
       "sha256": "72edaf3901863bf74f27de777a4f75ce0fcf1fc97ccffbac53d59a5cc72342d0"
+    },
+    {
+      "path": "site-migration-007-sir-david-local-claude.sql",
+      "sha256": "a8222111dfd62a4cefe9819e5e556290e59c8a097ceab21fd678e786498938d1"
     },
     {
       "path": "src/site/portal-api.ts",
@@ -105,7 +126,11 @@
     },
     {
       "path": "src/site/sir-david-api.ts",
-      "sha256": "09410186c5193621349125291080f202aecc9b0498ad1d1c5d1b042c68ddee56"
+      "sha256": "be0dd7a38111ea55bec8fa9ed54f5e6f1bb267d14511ef5c99339c64b0082c9f"
+    },
+    {
+      "path": "src/site/sir-david-local.ts",
+      "sha256": "4f08596f8f1db47b5c086666ba9ed4f38a8678b672bedd55ba65a24993860fb0"
     },
     {
       "path": "tsconfig.json",
@@ -121,5 +146,6 @@
     "runtime": "requires host portal authentication and D1; no standalone login"
   },
   "audioSourceCommit": "1829fb311d74aae09d50b9ad202a9dce106e5d63",
-  "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68"
+  "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68",
+  "claudeSourceCommit": "7ca21b5bd00bd96d9879a45b112527a7de67a9cc"
 }
