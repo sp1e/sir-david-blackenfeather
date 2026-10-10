@@ -146,7 +146,16 @@ internal sealed class CompanionWindow : Form
             };
             browser.CoreWebView2.NewWindowRequested += async (_, e) => await OpenPairingWindow(e, environment);
             browser.CoreWebView2.DownloadStarting += (_, e) => { e.Cancel = true; status.Text = "Använd webbläsaren för nedladdningar"; };
-            browser.CoreWebView2.PermissionRequested += (_, e) => e.State = PermissionPolicy.State(e.PermissionKind, e.Uri, browser.CoreWebView2.Source);
+            browser.CoreWebView2.PermissionRequested += (_, e) =>
+            {
+                e.SavesInProfile = false;
+                e.State = PermissionPolicy.State(e.PermissionKind, e.Uri, browser.CoreWebView2.Source);
+            };
+            // Earlier clients persisted a blanket deny. Reset audio only so each
+            // request reaches the document-scoped policy above, without changing
+            // cookies, the shared sound preference or any other permission.
+            foreach (var origin in new[] { "https://sp1e.se", "https://www.sp1e.se" })
+                await browser.CoreWebView2.Profile.SetPermissionStateAsync(CoreWebView2PermissionKind.Autoplay, origin, CoreWebView2PermissionState.Default);
             browser.CoreWebView2.Navigate(config.StartUrl);
         }
         catch (WebView2RuntimeNotFoundException)
@@ -187,7 +196,7 @@ internal sealed class CompanionWindow : Form
             popup.CoreWebView2.NavigationStarting += (_, e) => { if (e.Uri != target) e.Cancel = true; };
             popup.CoreWebView2.NewWindowRequested += (_, e) => e.Handled = true;
             popup.CoreWebView2.DownloadStarting += (_, e) => e.Cancel = true;
-            popup.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+            popup.CoreWebView2.PermissionRequested += (_, e) => { e.SavesInProfile = false; e.State = CoreWebView2PermissionState.Deny; };
             popup.CoreWebView2.WindowCloseRequested += (_, _) => pairing.Close();
             // Assign before navigation so WebView2 preserves the opener used by postMessage.
             request.NewWindow = popup.CoreWebView2;
