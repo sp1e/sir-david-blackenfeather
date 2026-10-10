@@ -14,5 +14,6 @@ node_modules/
 *.dpapi
 *.mp3
 *.wav
+!web/admin/assets/silence.wav
 *.lnk
 *.log
