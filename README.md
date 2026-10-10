@@ -25,7 +25,7 @@ Starta `app/Sir David Blackenfeather.exe`. Kör `Installera skrivbordsgenväg.ps
 
 ElevenLabs, modellen `eleven_multilingual_v2`, hastighet 0,9, stabilitet 0,65 och similarity boost 0,8. API-nycklar konfigureras separat och ska stanna på servern eller i tilläggets krypterade lokala fil. Admin kräver serverkontrollerad inloggning. Skrivbordsprogrammet tillåter endast HTTPS till sp1e.se och www.sp1e.se.
 
-Webbdelens talanslutning väntar på separat konfiguration av serverns ElevenLabs-nyckel. Det lokala Codex-tillägget har en egen anslutning.
+Drift på en egen server kräver `SIR_DAVID_ELEVENLABS_API_KEY` som serverhemlighet och en ny publicering efter konfigurationen. Använd en separat begränsad nyckel för Text to Speech och Voices Read. Det lokala Codex-tillägget har en egen anslutning. API-nycklar ska inte finnas i källkod, klientfiler eller GitHub.
 
 ## Licens
 
