@@ -97,6 +97,7 @@ export class ClaudeAdapter {
       if (!claude?.installed || !claude.signedIn) throw Error('Logga in i Claude Code på datorn.');
       // Require explicit bridge evidence; never silently replace subscription with API billing.
       if (claude.billingMode !== 'subscription') throw Error('Bryggan måste bekräfta Claude-abonnemanget före aktivering.');
+      if (combined.aborted || generation!==this.#generation) throw abortError();
       const job = await this.#request('/__agents/jobs',{body:request,signal:combined});
       id = job.id;
       if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{10,80}$/.test(id)) throw Error('Den lokala uppgiften saknar ett giltigt ID.');

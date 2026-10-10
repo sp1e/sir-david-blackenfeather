@@ -54,4 +54,4 @@ Första versionen använder CLI:s valda standardmodell. Modell- och resonemangsv
 
 ## Verifiering
 
-Kör `node --test local-adapter/claude-adapter.test.mjs`. Åtta mocktester täcker underlagsgränser, pairing-origin och fönsterkälla, utebliven debiteringsbekräftelse, lyckad commit-DTO, avbrytning med sent svar, frånkoppling, återkallad väntande parning och för stort svar. De förbrukar inga Claude- eller ElevenLabs-krediter. Faktisk parning, Claude-generering och sparande genom det kommande host-kontraktet återstår före aktivering.
+Kör `node --test local-adapter/claude-adapter.test.mjs`. Nio mocktester täcker underlagsgränser, pairing-origin och fönsterkälla, utebliven debiteringsbekräftelse, lyckad commit-DTO, avbrytning under statuskontroll och vid sent svar, frånkoppling, återkallad väntande parning och för stort svar. De förbrukar inga Claude- eller ElevenLabs-krediter. Faktisk parning, Claude-generering och sparande genom det kommande host-kontraktet återstår före aktivering.

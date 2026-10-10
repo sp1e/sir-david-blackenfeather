@@ -49,6 +49,12 @@ test('aborted polling cancels only this job and does not return late text',async
   assert.equal(f.calls.filter(c=>c.url?.endsWith('/cancel')).length,1);
   assert.deepEqual(JSON.parse(f.calls.at(-1).options.body),{id:'job_123456789'});
 });
+test('cancellation during status lookup prevents a new Claude job',async()=>{
+  const controller=new AbortController();
+  const f=fixture(()=>{controller.abort();return json({providers:[{id:'claude',installed:true,signedIn:true,billingMode:'subscription'}]});});
+  await f.pair();await assert.rejects(f.adapter.answer(prepared(),{signal:controller.signal}),{name:'AbortError'});
+  assert.equal(f.calls.filter(c=>c.url?.endsWith('/jobs')).length,0);
+});
 test('disconnect clears pairing and rejects a later use',async()=>{
   const f=fixture(()=>json({disconnected:true}));await f.pair();await f.adapter.disconnect();
   assert.equal(f.adapter.connected,false);await assert.rejects(f.adapter.status(),/Anslut/);
