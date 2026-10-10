@@ -123,7 +123,7 @@
     $('file-panel').hidden = !authorized || !isLocal() || !workspaceReady || !localAdapter?.connected;
     $('reload-files').disabled = busy || filesBusy;
     $('file-activity').querySelectorAll('button').forEach(button => { button.disabled = busy || filesBusy; });
-    $('workspace-note').textContent = workspaceReady && localAdapter?.connected ? 'Arbetsmapp: ' + workspaceName + '. Filinnehåll som behövs för uppdraget skickas till Claude. Ändringar får lokal filhistorik.' : 'Anslut igen och godkänn filåtkomst i det lokala fönstret. Webbsurf och datorstyrning är nästa steg.';
+    $('workspace-note').textContent = workspaceReady && localAdapter?.connected ? 'Arbetsmapp: ' + workspaceName + '. Filinnehåll som behövs för uppdraget skickas till Claude. Ändringar får lokal filhistorik.' : 'Anslut Claude och godkänn filåtkomst i det lokala fönstret. Filåtkomsten gäller bara din valda arbetsmapp.';
     $('provider').disabled = busy || localConnecting || !authorized;
     $('claude-model').disabled = busy || !localReady;
     $('claude-effort').disabled = busy || !localReady || !localModels.find(item => item.id === $('claude-model').value)?.efforts.length;

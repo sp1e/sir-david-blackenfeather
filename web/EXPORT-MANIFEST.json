@@ -31,7 +31,7 @@
     },
     {
       "path": "admin/index.html",
-      "sha256": "325f22da97d6346df85bca204b15bbe973935b419ad45cc3ea3a79303c1a8377"
+      "sha256": "d60724c52455d8b068c792b4351a09a4a67bb7d9c46b3e63d86e0a10df960577"
     },
     {
       "path": "admin/sir-david.css",
@@ -39,7 +39,7 @@
     },
     {
       "path": "admin/sir-david.js",
-      "sha256": "8208a13aa6560b51b16e1778b2cf041cfe860357f5567a78cfb11803a39db72a"
+      "sha256": "2a9e24cbb74e20db97ae7d743ba0a116cbedb0845cc9ca346a7ac8915c501991"
     },
     {
       "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
