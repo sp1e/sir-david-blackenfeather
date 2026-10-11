@@ -4,6 +4,22 @@ import {ClaudeAdapter,localRequest} from './claude-adapter.mjs';
 const NOW=1_000_000;
 const prepared=()=>({turn:{id:'11111111-1111-4111-8111-111111111111',version:2,expiresAt:NOW+120000},context:{persona:'British gentleman with dry humour.',text:'Hello',messages:[{role:'user',content:'Past question'},{role:'assistant',content:'Past answer'}],memories:['A saved note']}});
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}});
+test('default browser fetch keeps its Window receiver for paired requests',async()=>{
+  const previous=globalThis.fetch,calls=[],events=new EventTarget(),popup={close(){}};
+  globalThis.fetch=async function(url,options){
+    assert.equal(this,globalThis,'browser fetch requires its Window receiver');
+    calls.push({url,options});return json({providers:[],changes:[],ok:true});
+  };
+  const adapter=new ClaudeAdapter({origin:'https://www.sp1e.se',events,now:()=>NOW,openPopup:()=>popup});
+  try {
+    const pending=adapter.pair(),event=new Event('message');
+    Object.assign(event,{origin:'http://127.0.0.1:4318',source:popup,data:{type:'sp1e-local-paired',token:'t'.repeat(43)}});
+    events.dispatchEvent(event);await pending;
+    await adapter.status();await adapter.workspace();await adapter.undo('change-test','revision-test');await adapter.disconnect();
+    assert.equal(calls.length,4);
+    for(const call of calls){assert.equal(call.options.credentials,'omit');assert.equal(call.options.headers['X-Sp1e-Session'],'t'.repeat(43));}
+  } finally {globalThis.fetch=previous;}
+});
 function fixture(route) {
   const events=new EventTarget(),calls=[],popup={closed:false,close(){this.closed=true;}};
   const adapter=new ClaudeAdapter({origin:'https://www.sp1e.se',events,now:()=>NOW,sleep:async()=>{},openPopup:(...args)=>{calls.push({popup:args});return popup;},

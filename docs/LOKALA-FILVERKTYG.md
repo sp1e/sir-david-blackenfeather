@@ -25,7 +25,7 @@ Denna första filversion aktiveras bara på Windows. Webbens Admin-inloggning oc
 
 ## Verifiering
 
-63 API/DOM-tester, 9 adaptertester och 58 bryggtester passerar; ett symlinkprivilegetest hoppas över på den här datorn. Samma färdiga anslutningspaket klarar 36 fil-, agent- och routetestfall. Windowsjunction, blockerad mapp-/filrename, blockerad extern writer, versionskonflikter, avbrytning, full lästäckning, återställning, återskapande, scopes och förlorad Admin-behörighet är testade. Pipelineproven använder simulerad CLI och verkliga filer. Provfiler i OneDrive har verifierat läsning, skrivning, återställning och återskapande med sökvägar över 260 tecken. Webbtypkontroll och bygge passerar.
+63 API/DOM-tester, 10 adaptertester och 58 bryggtester passerar; ett symlinkprivilegetest hoppas över på den här datorn. Samma färdiga anslutningspaket klarar 36 fil-, agent- och routetestfall. Windowsjunction, blockerad mapp-/filrename, blockerad extern writer, versionskonflikter, avbrytning, full lästäckning, återställning, återskapande, scopes och förlorad Admin-behörighet är testade. Pipelineproven använder simulerad CLI och verkliga filer. Provfiler i OneDrive har verifierat läsning, skrivning, återställning och återskapande med sökvägar över 260 tecken. Webbtypkontroll och bygge passerar.
 
 Ingen verklig Claude-generering, ny TTS eller ny WebView2-parning har körts i dessa prov. Filåtkomstens Tillåt och ett verkligt uppdrag återstår som användarens acceptanssteg.
 

@@ -6,7 +6,8 @@
     "Owner-reviewed automatic speech files and additional auth-gate test dependencies copied from PR240 commit 1829fb311d74aae09d50b9ad202a9dce106e5d63. _redirects contains the relevant Admin and Sir David SQL rules only; other website routes are excluded.",
     "Claude host API tests are now copied intact with existing portal/session fixture dependencies. Canonical adapter lives in ../local-adapter; the export retains its own build script for that layout. The local bridge and source tests are exported separately; its setup ZIP is copied exactly from the reviewed host commit.",
     "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved.",
-    "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path."
+    "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path.",
+    "Claude fetch receiver hotfix and cache index synchronized with reviewed host 27a1a5dc3312d2055a14a07e6591c5465b38f668. Export bundle preserves its own module-source location comment."
   ],
   "files": [
     {
@@ -27,11 +28,11 @@
     },
     {
       "path": "admin/claude-adapter.js",
-      "sha256": "5b504d4dbeae38f21d9ac9bc645d285cfce03bad7e0fc7a450e8cbb456866da4"
+      "sha256": "fb8f4675931116aad57591a74b7a51b19418b8ba830732cde257d380b6447cea"
     },
     {
       "path": "admin/index.html",
-      "sha256": "d60724c52455d8b068c792b4351a09a4a67bb7d9c46b3e63d86e0a10df960577"
+      "sha256": "564abf7b744e83bdb58c9de3f184cd0e12d91651411bc69813ec1ada1fac2e2a"
     },
     {
       "path": "admin/sir-david.css",
@@ -141,10 +142,14 @@
   "verification": {
     "typecheck": "passed",
     "build": "passed",
-    "offlineTests": 29,
+    "offlineTests": 73,
     "liveInference": false,
     "secretPatternScan": "passed",
-    "runtime": "requires host portal authentication and D1; no standalone login"
+    "runtime": "requires host portal authentication and D1; no standalone login",
+    "webTests": 63,
+    "adapterTests": 10,
+    "bridgeTests": 58,
+    "nativeSelfTests": 49
   },
   "audioSourceCommit": "1829fb311d74aae09d50b9ad202a9dce106e5d63",
   "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68",
@@ -152,5 +157,8 @@
   "workspaceCandidateBase": "6ad29ac87559899fb03e63bbd1f00d32ec4c36fa",
   "workspaceReviewedSourceCommit": "85e466e309ba3dcbbb09342afe21b73b25cdf663",
   "workspaceProductionMerge": "d67450fff1114b5e446d110b2ebd6e6cffea82be",
-  "workspaceCompanionSha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730"
+  "workspaceCompanionSha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730",
+  "claudeFetchReviewedSourceCommit": "27a1a5dc3312d2055a14a07e6591c5465b38f668",
+  "claudeFetchProductionMerge": "6ffada267bcf2ce6479b62be147140a2ce9ad1f8",
+  "claudeFetchHostPr": "https://github.com/sp1e/sp1e.se/pull/247"
 }

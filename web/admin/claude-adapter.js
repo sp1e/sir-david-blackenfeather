@@ -47,7 +47,7 @@ var SirDavidLocal = (() => {
     #generation = 0;
     #active = null;
     #pairing = null;
-    constructor({ origin, fetchImpl = globalThis.fetch, events = globalThis.window, openPopup = (...args) => globalThis.window.open(...args), now = Date.now, sleep } = {}) {
+    constructor({ origin, fetchImpl = (...args) => globalThis.fetch(...args), events = globalThis.window, openPopup = (...args) => globalThis.window.open(...args), now = Date.now, sleep } = {}) {
       if (!ORIGINS.has(origin)) throw Error("Lokal anslutning kr\xE4ver r\xE4tt Admin-webbplats.");
       Object.assign(this, { origin, fetchImpl, events, openPopup, now });
       this.sleep = sleep ?? ((ms, signal) => new Promise((resolve, reject) => {
