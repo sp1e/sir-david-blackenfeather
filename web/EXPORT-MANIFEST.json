@@ -7,12 +7,17 @@
     "Claude host API tests are now copied intact with existing portal/session fixture dependencies. Canonical adapter lives in ../local-adapter; the export retains its own build script for that layout. The local bridge and source tests are exported separately; its setup ZIP is copied exactly from the reviewed host commit.",
     "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved.",
     "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path.",
-    "Claude fetch receiver hotfix and cache index synchronized with reviewed host 27a1a5dc3312d2055a14a07e6591c5465b38f668. Export bundle preserves its own module-source location comment."
+    "Claude fetch receiver hotfix and cache index synchronized with reviewed host 27a1a5dc3312d2055a14a07e6591c5465b38f668. Export bundle preserves its own module-source location comment.",
+    "Planner candidate adds owner-scoped projects, events, reminder claims and delegated Outlook integration on the existing companion export. Migration 010 is reserved with the host owner. Native 1.3 is a separate build; host deployment and Microsoft user consent are separate acceptance steps."
   ],
   "files": [
     {
       "path": ".gitignore",
       "sha256": "fb2e77ae041a7c088d6d520c69852a56b1042ff457838623b3e7bf4dc0589067"
+    },
+    {
+      "path": "README.md",
+      "sha256": "b13e4693bd409fd18efc4afa56db1f0139445eaa16d143df5d4d3c419438c27a"
     },
     {
       "path": "_redirects",
@@ -32,15 +37,19 @@
     },
     {
       "path": "admin/index.html",
-      "sha256": "564abf7b744e83bdb58c9de3f184cd0e12d91651411bc69813ec1ada1fac2e2a"
+      "sha256": "d9089832aebcb0cdccf2e0fadc8b1ccdc25e5ad55fc295f779163360f9230770"
+    },
+    {
+      "path": "admin/sir-david-planner.js",
+      "sha256": "e813979e80428da8ca18c3ca4a6fbe4c46b6f253d8fc8ad0ee121c4ab10590df"
     },
     {
       "path": "admin/sir-david.css",
-      "sha256": "ef13d89dbc3a31a1a5e61bd6c3ed9062c9c7321bab4d7e3ded54258de334d30f"
+      "sha256": "546d33a1c11d34b5bba2165b27fc4e7148f68f778cb2367430ece05625d337dc"
     },
     {
       "path": "admin/sir-david.js",
-      "sha256": "2a9e24cbb74e20db97ae7d743ba0a116cbedb0845cc9ca346a7ac8915c501991"
+      "sha256": "3e32088eec1d9283026790d313b277d6d88160948dabbb5a65e0ebae51b892aa"
     },
     {
       "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
@@ -60,15 +69,11 @@
     },
     {
       "path": "package.json",
-      "sha256": "123854b79bbc0601fa6e360e8688e4846305785ba64763d703e39b1c4156d1c7"
+      "sha256": "536e4e425c7bbb67ad9ae21cd67db4645321641349ad7a042442a603cea8959b"
     },
     {
       "path": "portal/portal.js",
       "sha256": "65199e0e3c27753746556649b25edfb5008155065076ad4ad6fdcfd45d0495ba"
-    },
-    {
-      "path": "README.md",
-      "sha256": "4eeceb5928ae58a52fa0ce19d105ded5427a0e9c94d5c0440655b4839a2e98c1"
     },
     {
       "path": "schema.sql",
@@ -83,12 +88,16 @@
       "sha256": "adc129b8a74df64526a6715c4b6c2e1fe9a5c598ae50808c0e246124dcaf5bc2"
     },
     {
+      "path": "scripts/sir-david-planner-ui.test.mjs",
+      "sha256": "f084f185a774e5bfa0b7d1f79a4b042abcdde6399b78fe9088c80702c11123e6"
+    },
+    {
       "path": "scripts/sir-david-ui.test.mjs",
-      "sha256": "0ab40a65b3f21781a78c885da7315911b7a320ae0b3bf1fca88d003938be1932"
+      "sha256": "4de3380ff434549f93710b1342cb22c1f47a77481eba1318bc38e4104f0ee818"
     },
     {
       "path": "scripts/sir-david.test.mjs",
-      "sha256": "ddae828e0522289a279b0dee3886162361f1804e883ea95e64d42f22565d09e1"
+      "sha256": "4f0ab30ad8fe8deead2b7ddb86deb75c91f06461f791e148879edff4411ab0ed"
     },
     {
       "path": "site-migration-002-auth-throttle.sql",
@@ -111,6 +120,10 @@
       "sha256": "a8222111dfd62a4cefe9819e5e556290e59c8a097ceab21fd678e786498938d1"
     },
     {
+      "path": "site-migration-010-sir-david-planner.sql",
+      "sha256": "056da277062a638d06b1554886a9199d8e1a8c7a47e849c3e3b3bb3e84a49907"
+    },
+    {
       "path": "src/site/portal-api.ts",
       "sha256": "13d7fae9fb91ce045a04a6fedcb5ad796b74ea2978056503e47bddd3719b412a"
     },
@@ -128,11 +141,19 @@
     },
     {
       "path": "src/site/sir-david-api.ts",
-      "sha256": "be0dd7a38111ea55bec8fa9ed54f5e6f1bb267d14511ef5c99339c64b0082c9f"
+      "sha256": "b8f4ceba186c54897f83f1d9e6bea4588c3fa4d8784dd23d5994b1bd6af832a1"
     },
     {
       "path": "src/site/sir-david-local.ts",
       "sha256": "4f08596f8f1db47b5c086666ba9ed4f38a8678b672bedd55ba65a24993860fb0"
+    },
+    {
+      "path": "src/site/sir-david-outlook.ts",
+      "sha256": "466f419b022f67178c32bd2258708806ae8b1c68c15cc2fa6bf41d39da4092ff"
+    },
+    {
+      "path": "src/site/sir-david-planner.ts",
+      "sha256": "50c8f44fe1e67b99d7ca20df0970ac4f971368cf4f5ba8369bf7d4d63edaed7e"
     },
     {
       "path": "tsconfig.json",
@@ -146,10 +167,12 @@
     "liveInference": false,
     "secretPatternScan": "passed",
     "runtime": "requires host portal authentication and D1; no standalone login",
-    "webTests": 63,
+    "webTests": 93,
     "adapterTests": 10,
     "bridgeTests": 58,
-    "nativeSelfTests": 49
+    "nativeSelfTests": 63,
+    "plannerLiveCalendar": false,
+    "plannerHostDeployed": false
   },
   "audioSourceCommit": "1829fb311d74aae09d50b9ad202a9dce106e5d63",
   "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68",
@@ -160,5 +183,7 @@
   "workspaceCompanionSha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730",
   "claudeFetchReviewedSourceCommit": "27a1a5dc3312d2055a14a07e6591c5465b38f668",
   "claudeFetchProductionMerge": "6ffada267bcf2ce6479b62be147140a2ce9ad1f8",
-  "claudeFetchHostPr": "https://github.com/sp1e/sp1e.se/pull/247"
+  "claudeFetchHostPr": "https://github.com/sp1e/sp1e.se/pull/247",
+  "plannerCandidateBase": "6e1a0f74e42825929c874d7ad1cb138f2b500ebc",
+  "plannerHostMigration": "site-migration-010-sir-david-planner.sql"
 }

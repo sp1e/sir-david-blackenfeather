@@ -9,6 +9,9 @@
   const silentAudio = new URL('/admin/assets/silence.wav', window.location.origin).href;
   let localReady = false, localConnecting = false, localModels = [], pairController = null;
   let workspaceReady = false, workspaceName = '', filesBusy = false;
+  let planner = null;
+  let nativeVisible = true;
+  window.chrome?.webview?.addEventListener('message', event => { if (event.data?.type === 'sir-david-native-tick' && typeof event.data.visible === 'boolean') { nativeVisible = event.data.visible; if (!nativeVisible) { cancelSpeech(); update(); } } });
   // Unsupported preview origins must not stop the existing cloud companion.
   let localAdapter = null;
   if (window.SirDavidLocal) {
@@ -110,13 +113,14 @@
   async function api(route, options = {}) {
     const response = await fetch('/api/sir-david/' + route, { credentials: 'same-origin', cache: 'no-store', ...options });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) { authorized = false; connected = false; speechConnected = false; localReady = false; workspaceReady = false; $('files-mode').checked = false; $('file-activity').replaceChildren(); pairController?.abort(); controller?.abort(); localAdapter?.disconnect(); cancelSpeech(); $('messages').replaceChildren(); $('memories').replaceChildren(); history = []; update(); }
+      if (response.status === 401 || response.status === 403) { authorized = false; connected = false; speechConnected = false; localReady = false; workspaceReady = false; planner?.clear(); $('files-mode').checked = false; $('file-activity').replaceChildren(); pairController?.abort(); controller?.abort(); localAdapter?.disconnect(); cancelSpeech(); $('messages').replaceChildren(); $('memories').replaceChildren(); history = []; update(); }
       const data = await response.json().catch(() => ({}));
       throw Error(data.error || 'Anropet kunde inte slutföras.');
     }
     return response;
   }
   const post = (route, body, signal) => api(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
+  planner = window.SirDavidPlanner?.create({ api, post, authorized: () => authorized, speechEnabled: () => autoSpeak && speechConnected && preferencesReady && !preferencesFailed, canSpeak: () => !busy && !speechBusy && !preferencesBusy, speak: content => speakContent(content) });
   function update() {
     $('send').disabled = busy || filesBusy || !canChat(); $('model').disabled = busy || !connected;
     $('files-mode').disabled = busy || filesBusy || !authorized || !workspaceReady || !localAdapter?.connected;
@@ -171,7 +175,7 @@
     } finally { preferencesBusy = false; update(); }
   });
   async function speakContent(content) {
-    if (!authorized || !speechConnected || !autoSpeak || preferencesBusy || preferencesFailed) return;
+    if (!authorized || !nativeVisible || !speechConnected || !autoSpeak || preferencesBusy || preferencesFailed) return;
     cancelSpeech(); const ownSpeechEpoch = speechEpoch;
     speechBusy = true; speechController = new AbortController(); $('stop-speech').hidden = false; update();
     try {
@@ -267,7 +271,7 @@
       if (ownEpoch !== epoch || !authorized) return;
       renderConversation(data.conversation); $('prompt').value = ''; $('status').textContent = '';
       if (!preferencesFailed) await refreshPreferences();
-      if (ownEpoch === epoch && autoSpeak && !preferencesBusy && !preferencesFailed) {
+      if (ownEpoch === epoch && autoSpeak && nativeVisible && !preferencesBusy && !preferencesFailed) {
         const reply = data.conversation.messages.at(-1);
         if (reply?.role === 'assistant') speakContent(reply.content);
       }
@@ -298,6 +302,7 @@
       $('connection').textContent = (connected ? 'Ollama Cloud anslutet' : 'Ollama Cloud väntar på anslutning') + ' · ' + (speechConnected ? 'Din röst är ansluten' : 'Rösten väntar på en servernyckel');
       await loadMemories(); await loadConversation();
       initialized = true;
+      await planner?.init().catch(error => { if (authorized) $('planner-status').textContent = error.message; });
     } catch (error) { $('connection').textContent = error.message; }
     finally { initializing = false; }
     update();

@@ -25,7 +25,7 @@ const hash = value => createHash('sha256').update(value).digest('hex');
 function fixture(t, extra = {}) {
   const sql = new DatabaseSync(':memory:');
   sql.exec('PRAGMA foreign_keys=ON');
-  for (const file of ['schema.sql','site-migration-002-auth-throttle.sql','site-migration-003-portal.sql','site-migration-005-sir-david.sql','site-migration-006-sir-david-audio.sql','site-migration-007-sir-david-local-claude.sql']) sql.exec(fs.readFileSync(new URL(file, root),'utf8'));
+  for (const file of ['schema.sql','site-migration-002-auth-throttle.sql','site-migration-003-portal.sql','site-migration-005-sir-david.sql','site-migration-006-sir-david-audio.sql','site-migration-007-sir-david-local-claude.sql','site-migration-010-sir-david-planner.sql']) sql.exec(fs.readFileSync(new URL(file, root),'utf8'));
   for (const [id,token] of Object.entries(tokens)) {
     const role = id === 'other' ? 'admin' : id;
     sql.prepare('INSERT INTO site_portal_profiles(id,role,device_hash,created_at) VALUES (?,?,?,?)').run(id,role,'fixture-device-'+id,new Date().toISOString());
@@ -67,6 +67,122 @@ const memory = (env,content,role='admin') => call(env,'memories',{role,method:'P
 const conversation = async (env,role='admin') => (await (await call(env,'conversation',{role})).json()).conversation;
 const leaseCount = env => env.sql.prepare('SELECT count(*) n FROM site_companion_leases').get().n;
 const quotaCount = env => env.sql.prepare("SELECT coalesce(sum(attempts),0) n FROM auth_attempts WHERE scope LIKE 'sir-david-%'").get().n;
+
+const plannerFile=path.join(temp,'planner.mjs'), outlookFile=path.join(temp,'outlook.mjs');
+await build({entryPoints:[fileURLToPath(new URL('src/site/sir-david-planner.ts',root))],bundle:true,format:'esm',platform:'neutral',outfile:plannerFile,logLevel:'silent'});
+await build({entryPoints:[fileURLToPath(new URL('src/site/sir-david-outlook.ts',root))],bundle:true,format:'esm',platform:'neutral',outfile:outlookFile,logLevel:'silent'});
+const {defaultPlanner,dueReminders,inQuietHours,rankedProjects,planningContext}=await import(pathToFileURL(plannerFile).href);
+const {encrypt,decrypt,normalizeGraphEvent,graphPage}=await import(pathToFileURL(outlookFile).href);
+const planner=async(env,role='admin')=>(await(await call(env,'planner',{role})).json()).planner;
+const savePlan=(env,document,version=0,role='admin')=>call(env,'planner',{method:'PUT',role,payload:{document,version}});
+const project=(extra={})=>({id:crypto.randomUUID(),title:'Testprojekt',notes:'Privat anteckning',nextAction:'Skriv första utkastet',deadline:null,priority:'normal',status:'active',...extra});
+const plan=()=>{const doc=defaultPlanner();doc.settings.quietStart=doc.settings.quietEnd=0;return doc;};
+const outlookConfig={SIR_DAVID_OUTLOOK_CLIENT_ID:'11111111-1111-4111-8111-111111111111',SIR_DAVID_OUTLOOK_CLIENT_SECRET:'synthetic-secret',SIR_DAVID_OUTLOOK_TOKEN_KEY:'11'.repeat(32)};
+function productionRequest(route,options={}) {const prior=request(route,options),headers=new Headers(prior.headers);if(prior.method==='POST')headers.set('Origin','https://sp1e.se');return new Request('https://sp1e.se/api/sir-david/'+route,{method:prior.method,headers,...(['GET','HEAD'].includes(prior.method)?{}:{body:JSON.stringify(options.payload??{})})});}
+const productionCall=(env,route,options)=>handleSirDavidRequest(productionRequest(route,options),env,route);
+
+test('planner routes reject visitors, cross-site traffic and revoked Admin without upstream use',async t=>{
+  const env=fixture(t),calls=upstream(t);
+  for(const role of [null,'guest','clique'])for(const [route,method,payload] of [['planner','GET'],['planner','PUT',{document:plan(),version:0}],['planner/claim','POST',{key:'a'.repeat(64),version:0}],['planner/ack','POST',{key:'a'.repeat(64),claimId:'x'}],['planner/snooze','POST',{key:'a'.repeat(64),minutes:60}],['outlook/status','GET'],['outlook/connect','POST',{}],['outlook/sync','POST',{}],['outlook/disconnect','POST',{}]])assert.equal((await call(env,route,{role,method,payload})).status,role?403:401);
+  assert.equal((await call(env,'planner',{headers:{'sec-fetch-site':'cross-site'}})).status,403);
+  env.sql.prepare("UPDATE site_portal_profiles SET revoked_at='now' WHERE id='admin'").run();assert.equal((await call(env,'planner')).status,401);assert.equal(calls.length,0);
+});
+test('planner is shared per owner, read-only polls do not write, stale CAS cannot overwrite',async t=>{
+  const env=fixture(t),calls=upstream(t),document=plan();document.projects=[project()];
+  const initial=await planner(env),writes=env.sql.prepare('SELECT total_changes() n').get().n;await planner(env);assert.equal(env.sql.prepare('SELECT total_changes() n').get().n,writes);
+  assert.equal(initial.version,0);assert.equal((await savePlan(env,document)).status,200);assert.equal((await planner(env)).document.projects[0].title,'Testprojekt');assert.equal((await planner(env,'other')).document.projects.length,0);
+  assert.equal((await savePlan(env,plan(),0)).status,409);assert.equal((await planner(env)).version,1);assert.equal(calls.length,0);assert.equal(quotaCount(env),0);
+});
+test('planner rejects invalid dates, duplicate ids, forged Outlook entries and oversized fields',async t=>{
+  const env=fixture(t),cases=[];
+  for(const p of [project({title:'x'.repeat(121)}),project({deadline:'2026-02-30T00:00:00.000Z'}),project({id:'other'}),project({status:'execute'}),project({notes:'x'.repeat(1001)})]){const d=plan();d.projects=[p];cases.push(d);}
+  const duplicate=plan(),p=project();duplicate.projects=[p,p];cases.push(duplicate);
+  const forged=plan();forged.events=[{id:crypto.randomUUID(),title:'Forged',start:'2026-10-11T12:00:00.000Z',end:'2026-10-11T13:00:00.000Z',allDay:false,source:'outlook'}];cases.push(forged);
+  const badZone=plan();badZone.settings.timezone='America/Unknown';cases.push(badZone);const extra=plan();extra.command='shell';cases.push(extra);
+  for(const d of cases)assert.equal((await savePlan(env,d)).status,400);assert.equal((await planner(env)).version,0);
+});
+test('deadline stages select one current stage, ignore paused/done and rank urgent work first',async()=>{
+  const now=Date.parse('2026-10-11T12:00:00Z'),d=plan();d.projects=[project({title:'Later high',priority:'high',deadline:new Date(now+9*86400000).toISOString()}),project({title:'Urgent',deadline:new Date(now+3600000).toISOString()}),project({status:'paused',deadline:new Date(now).toISOString()}),project({status:'done',deadline:new Date(now).toISOString()})];
+  assert.equal(rankedProjects(d.projects,now)[0].title,'Urgent');const due=await dueReminders(d,[],now);assert.equal(due.length,1);assert.match(due[0].message,/två timmar/);
+  d.projects[1].deadline=new Date(now-86400000).toISOString();assert.match((await dueReminders(d,[],now))[0].message,/passerat/);
+});
+test('quiet hours follow Stockholm DST and a same-hour range disables quiet hours',()=>{
+  const s=defaultPlanner().settings;assert.equal(inQuietHours(s,Date.parse('2026-03-29T05:59:00Z')),true);assert.equal(inQuietHours(s,Date.parse('2026-03-29T06:00:00Z')),false);assert.equal(inQuietHours(s,Date.parse('2026-10-25T06:59:00Z')),true);assert.equal(inQuietHours(s,Date.parse('2026-10-25T07:00:00Z')),false);assert.equal(inQuietHours({...s,quietStart:0,quietEnd:0},Date.parse('2026-10-11T00:00:00Z')),false);
+});
+test('event alarms exclude all-day and expired meetings',async()=>{
+  const now=Date.parse('2026-10-11T12:00:00Z'),d=plan(),event={id:crypto.randomUUID(),title:'Meeting',start:new Date(now+20*60000).toISOString(),end:new Date(now+60*60000).toISOString(),allDay:false,source:'manual'};
+  d.events=[event,{...event,id:crypto.randomUUID(),allDay:true},{...event,id:crypto.randomUUID(),start:new Date(now-10*60000).toISOString()}];assert.equal((await dueReminders(d,[],now)).length,1);
+});
+test('one reminder claim wins across clients, ack binds session, receipt prevents repeat',async t=>{
+  const env=fixture(t),calls=upstream(t),d=plan();d.projects=[project({deadline:new Date(Date.now()+3600000).toISOString()})];await savePlan(env,d);const key=(await planner(env)).reminders[0].key;
+  const first=await call(env,'planner/claim',{method:'POST',payload:{key,version:1}}),data=await first.json();assert.equal(first.status,200);assert.equal((await call(env,'planner/claim',{method:'POST',payload:{key,version:1}})).status,409);
+  assert.equal((await call(env,'planner/ack',{method:'POST',role:'other',payload:{key,claimId:data.claimId}})).status,409);
+  env.sql.prepare("INSERT INTO site_portal_sessions(token_hash,profile_id,created_at) VALUES(?,?,?)").run(hash('e'.repeat(64)),'admin','now');
+  const wrong=request('planner/ack',{method:'POST',payload:{key,claimId:data.claimId}});wrong.headers.set('cookie','__Host-sp1e_session='+'e'.repeat(64));assert.equal((await handleSirDavidRequest(wrong,env,'planner/ack')).status,409);
+  assert.equal((await call(env,'planner/ack',{method:'POST',payload:{key,claimId:data.claimId}})).status,200);assert.equal((await planner(env)).reminders.length,0);assert.equal(calls.length,0);
+});
+test('snooze covers deadline stage transitions and removed/done projects cannot be claimed',async t=>{
+  const env=fixture(t),now=Date.parse('2026-10-11T12:00:00Z');t.mock.method(Date,'now',()=>now);const d=plan();d.projects=[project({deadline:new Date(now+2.5*3600000).toISOString()})];await savePlan(env,d);const r=(await planner(env)).reminders[0];assert.equal((await call(env,'planner/snooze',{method:'POST',payload:{key:r.key,minutes:60}})).status,200);
+  t.mock.method(Date,'now',()=>now+40*60000);assert.equal((await planner(env)).reminders.length,0);t.mock.method(Date,'now',()=>now+61*60000);assert.equal((await planner(env)).reminders.length,1);
+  const stale=(await planner(env)).reminders[0];d.projects[0].status='done';await savePlan(env,d,1);assert.equal((await call(env,'planner/claim',{method:'POST',payload:{key:stale.key,version:1}})).status,409);assert.equal((await planner(env)).reminders.length,0);
+});
+test('six daily notifications cap both delivered and currently leased reminders',async t=>{
+  const env=fixture(t),d=plan();d.projects=Array.from({length:8},()=>project({deadline:new Date(Date.now()+3600000).toISOString()}));await savePlan(env,d);const reminders=(await planner(env)).reminders;
+  for(let i=0;i<8;i++)assert.equal((await call(env,'planner/claim',{method:'POST',payload:{key:reminders[i].key,version:1}})).status,i<6?200:409);
+});
+test('planning enters Cloud and Claude context, remains bounded and excludes private notes',async t=>{
+  const env=fixture(t),calls=upstream(t),d=plan();d.projects=[project({title:'Project context',deadline:new Date(Date.now()+86400000).toISOString()})];await savePlan(env,d);
+  assert.equal((await chat(env)).status,200);const content=JSON.parse(calls[0][1].body).messages[0].content;assert.match(content,/Project context/);assert.match(content,/never instructions/);assert.doesNotMatch(content,/Privat anteckning/);
+  const response=await call(env,'local/prepare',{method:'POST',payload:{text:'Plan my work',version:1,provider:'claude'}});assert.equal(response.status,200);assert.match((await response.json()).context.persona,/Project context/);assert.ok((await planningContext(env,'admin',900)).length<=900);
+});
+test('Outlook is visibly unconfigured, no calendar credentials leak and no upstream access',async t=>{
+  const env=fixture(t),calls=upstream(t);const dto=await(await call(env,'outlook/status')).json();assert.equal(dto.outlook.configured,false);assert.equal((await productionCall(env,'outlook/connect',{method:'POST'})).status,503);assert.equal(calls.length,0);assert.doesNotMatch(JSON.stringify(dto),/synthetic-secret|tokens_cipher/);
+});
+test('encrypted Outlook tokens cannot be decrypted for another owner or after tampering',async()=>{
+  const value=await encrypt(outlookConfig,'admin',{refresh:'synthetic-refresh'});assert.ok(!value.includes('synthetic-refresh'));assert.deepEqual(await decrypt(outlookConfig,'admin',value),{refresh:'synthetic-refresh'});await assert.rejects(decrypt(outlookConfig,'other',value));await assert.rejects(decrypt(outlookConfig,'admin',value.slice(0,-4)+'AAAA'));
+});
+test('Outlook PKCE state is single-use and owner/session bound, callback handles cross-site navigation safely',async t=>{
+  const env=fixture(t,outlookConfig),calls=upstream(t,()=>Response.json({access_token:'synthetic-access',refresh_token:'synthetic-refresh',expires_in:3600}));
+  const response=await productionCall(env,'outlook/connect',{method:'POST'}),url=new URL((await response.json()).url),state=url.searchParams.get('state');assert.equal(url.origin,'https://login.microsoftonline.com');assert.equal(url.searchParams.get('code_challenge_method'),'S256');assert.equal(url.searchParams.get('scope'),'https://graph.microsoft.com/Calendars.ReadBasic offline_access');
+  const callback=new Request('https://sp1e.se/api/sir-david/outlook/callback?code=synthetic-code&state='+state,{headers:{cookie:'__Host-sp1e_session='+tokens.other,'sec-fetch-site':'cross-site'}});assert.equal((await handleSirDavidRequest(callback,env,'outlook/callback')).status,409);assert.equal(calls.length,0);
+  const adminCallback=new Request(callback.url,{headers:{cookie:'__Host-sp1e_session='+tokens.admin,'sec-fetch-site':'cross-site'}});const success=await handleSirDavidRequest(adminCallback,env,'outlook/callback');assert.equal(success.status,303);assert.equal(success.headers.get('Referrer-Policy'),'no-referrer');assert.equal((await handleSirDavidRequest(new Request(adminCallback),env,'outlook/callback')).status,409);assert.equal(calls.length,1);
+  assert.ok(!env.sql.prepare('SELECT tokens_cipher FROM site_companion_outlook').get().tokens_cipher.includes('synthetic-refresh'));assert.doesNotMatch(await(await call(env,'outlook/status')).text(),/synthetic-access|synthetic-refresh/);
+});
+test('Graph continuation rejects foreign origin, credentials and wrong routes; private titles are masked',()=>{
+  for(const url of ['https://evil.example/v1.0/me/calendarView','https://graph.microsoft.com/v1.0/me/messages','https://user@graph.microsoft.com/v1.0/me/calendarView','http://graph.microsoft.com/v1.0/me/calendarView'])assert.throws(()=>graphPage(url));assert.equal(graphPage('https://graph.microsoft.com/v1.0/me/calendarView?$skiptoken=test'),'https://graph.microsoft.com/v1.0/me/calendarView?$skiptoken=test');
+  const event={id:'graph-id',subject:'Confidential title',start:{dateTime:'2026-10-11T12:00:00.0000000',timeZone:'UTC'},end:{dateTime:'2026-10-11T13:00:00.0000000',timeZone:'UTC'},isAllDay:false,sensitivity:'private'};assert.equal(normalizeGraphEvent(event).title,'Privat kalenderhändelse');assert.equal(normalizeGraphEvent({...event,isCancelled:true}),null);assert.throws(()=>normalizeGraphEvent({...event,start:{dateTime:'bad',timeZone:'UTC'}}));
+});
+test('Outlook sync rotates refresh token, caches only safe fields, does not overwrite project edits',async t=>{
+  const env=fixture(t,outlookConfig),d=plan();d.projects=[project()];await savePlan(env,d);
+  env.sql.prepare('INSERT INTO site_companion_outlook(owner_id,tokens_cipher) VALUES(?,?)').run('admin',await encrypt(env,'admin',{access:'old-access',refresh:'old-refresh',expires:0}));
+  const calls=upstream(t,url=>url.endsWith('/token')?Response.json({access_token:'new-access',refresh_token:'new-refresh',expires_in:3600}):Response.json({value:[{id:'graph',subject:'Meeting',body:'Do not cache',attendees:['Do not cache'],start:{dateTime:'2026-10-11T12:00:00',timeZone:'UTC'},end:{dateTime:'2026-10-11T13:00:00',timeZone:'UTC'},isAllDay:false,sensitivity:'normal'}]}));
+  assert.equal((await call(env,'outlook/sync',{method:'POST'})).status,200);assert.equal(calls.length,2);assert.equal((await planner(env)).document.projects.length,1);const row=env.sql.prepare('SELECT * FROM site_companion_outlook').get();assert.doesNotMatch(row.events_json,/Do not cache/);assert.equal((await decrypt(env,'admin',row.tokens_cipher)).refresh,'new-refresh');
+  assert.equal((await call(env,'outlook/sync',{method:'POST'})).status,200);assert.equal(calls.length,2);assert.equal((await call(env,'outlook/disconnect',{method:'POST'})).status,200);assert.equal((await planner(env)).outlookEvents.length,0);
+});
+test('failed/incomplete calendar sync retains prior cache and disables stale event alarms',async t=>{
+  const env=fixture(t,outlookConfig),old=[{id:'old',title:'Cached',start:new Date(Date.now()+600000).toISOString(),end:new Date(Date.now()+3600000).toISOString(),allDay:false,source:'outlook'}];
+  env.sql.prepare('INSERT INTO site_companion_outlook(owner_id,tokens_cipher,events_json,last_sync) VALUES(?,?,?,?)').run('admin',await encrypt(env,'admin',{access:'synthetic-access',refresh:'synthetic-refresh',expires:Date.now()+3600000}),JSON.stringify(old),Date.now()-2*3600000);upstream(t,()=>Response.json({value:[], '@odata.nextLink':'https://evil.example/steal'}));assert.equal((await call(env,'outlook/sync',{method:'POST'})).status,503);const dto=await planner(env);assert.equal(dto.outlookEvents.length,1);assert.equal(dto.outlookFresh,false);assert.equal(dto.reminders.length,0);
+});
+test('revocation after the HTTP guard prevents planner mutations and reminder claims in the transaction',async t=>{
+  for(const mode of ['save','claim']){
+    const env=fixture(t),d=plan();d.projects=[project({deadline:new Date(Date.now()+3600000).toISOString()})];if(mode==='claim')await savePlan(env,d);
+    const key=mode==='claim'?(await planner(env)).reminders[0].key:null,prepare=env.DB.prepare;
+    t.mock.method(env.DB,'prepare',query=>{if(query.startsWith(mode==='save'?'INSERT INTO site_companion_planners':'INSERT INTO site_companion_reminders'))env.sql.prepare("UPDATE site_portal_sessions SET revoked_at='now' WHERE profile_id='admin'").run();return prepare(query);});
+    const response=mode==='save'?await savePlan(env,d):await call(env,'planner/claim',{method:'POST',payload:{key,version:1}});assert.equal(response.status,409);assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_reminders').get().n,0);if(mode==='save')assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_planners').get().n,0);
+  }
+});
+test('disconnect or session revocation during OAuth exchange cannot resurrect a calendar connection',async t=>{
+  for(const mode of ['disconnect','revoke']){
+    const env=fixture(t,outlookConfig);const response=await productionCall(env,'outlook/connect',{method:'POST'}),state=new URL((await response.json()).url).searchParams.get('state');
+    t.mock.method(globalThis,'fetch',async()=>{if(mode==='disconnect')env.sql.prepare("DELETE FROM site_companion_outlook_states WHERE owner_id='admin'").run();else env.sql.prepare("UPDATE site_portal_sessions SET revoked_at='now' WHERE profile_id='admin'").run();return Response.json({access_token:'synthetic-access',refresh_token:'synthetic-refresh',expires_in:3600});});
+    const callback=new Request('https://sp1e.se/api/sir-david/outlook/callback?code=synthetic-code&state='+state,{headers:{cookie:'__Host-sp1e_session='+tokens.admin}});assert.equal((await handleSirDavidRequest(callback,env,'outlook/callback')).status,409);assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_outlook').get().n,0);
+  }
+});
+test('snooze and expired delivery leases cannot reset the six-attempt daily cap',async t=>{
+  const env=fixture(t),start=Date.parse('2026-10-11T12:00:00Z');let now=start;t.mock.method(Date,'now',()=>now);const d=plan();d.projects=[project({deadline:new Date(now+24*3600000).toISOString()})];await savePlan(env,d);
+  for(let i=0;i<6;i++){const r=(await planner(env)).reminders[0],response=await call(env,'planner/claim',{method:'POST',payload:{key:r.key,version:1}});assert.equal(response.status,200);assert.equal((await call(env,'planner/snooze',{method:'POST',payload:{key:r.key,minutes:15}})).status,200);now+=16*60000;}
+  const r=(await planner(env)).reminders[0];assert.equal((await call(env,'planner/claim',{method:'POST',payload:{key:r.key,version:1}})).status,409);assert.equal(env.sql.prepare('SELECT claims FROM site_companion_reminder_days').get().claims,6);
+});
 
 test('saved audio defaults on, persists per owner and rejects stale clients without spending',async t=>{
   const env=fixture(t), calls=upstream(t);

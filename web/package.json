@@ -7,7 +7,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "test": "node --test --test-timeout=10000 scripts/sir-david.test.mjs scripts/sir-david-ui.test.mjs scripts/sir-david-claude-ui.test.mjs",
+    "test": "node --test --test-timeout=10000 scripts/sir-david.test.mjs scripts/sir-david-ui.test.mjs scripts/sir-david-claude-ui.test.mjs scripts/sir-david-planner-ui.test.mjs",
     "check": "tsc -p tsconfig.json --noEmit",
     "build": "node scripts/build.mjs"
   },
