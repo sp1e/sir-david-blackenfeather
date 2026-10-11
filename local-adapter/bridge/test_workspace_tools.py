@@ -1,13 +1,18 @@
-import os, tempfile, unittest, json
+import os, tempfile, unittest, json, shutil
 from pathlib import Path
 from unittest.mock import patch
-from workspace_tools import Workspace, digest
+from workspace_tools import Workspace, digest, native_path
 
 class WorkspaceTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.base=Path(self.temp.name)
         self.root=self.base/'workspace';self.root.mkdir();self.files=Workspace(self.root,self.base/'history')
-    def tearDown(self):self.temp.cleanup()
+    def tearDown(self):
+        # This owned fixture may now contain paths beyond the legacy Win32 limit.
+        self.assertEqual(self.base,Path(self.temp.name))
+        self.assertTrue(self.base.absolute().is_relative_to(Path(tempfile.gettempdir()).absolute()))
+        shutil.rmtree(native_path(self.base))
+        self.temp.cleanup()
     def test_create_read_edit_undo_roundtrip_preserves_utf8(self):
         first=self.files.write('notes.md','En korp.\n',None)
         read=self.files.read('notes.md');self.assertEqual(read['version'],first['version'])
@@ -20,7 +25,7 @@ class WorkspaceTests(unittest.TestCase):
         created=self.files.write('new.txt','Sparad text',None)
         self.files.undo(created['changeId'],created['version'])
         self.assertFalse((self.root/'new.txt').exists())
-        self.assertEqual((self.base/'history'/(created['changeId']+'.created.bin')).read_text(),'Sparad text')
+        self.assertEqual((self.files.history/(created['changeId']+'.created.bin')).read_text(),'Sparad text')
         self.assertEqual(self.files.activity()[0]['action'],'undo-create')
         self.files.undo(created['changeId'],None)
         self.assertEqual(self.files.read('new.txt')['text'],'Sparad text')
@@ -29,6 +34,53 @@ class WorkspaceTests(unittest.TestCase):
         with self.assertRaises(OSError):self.files.write('notes.txt','overwrite',None)
         with self.assertRaises(ValueError):self.files.write('notes.txt','overwrite','0'*64)
         self.assertEqual(self.files.read('notes.txt')['text'],'original')
+    def test_recovery_failure_before_new_file_creation_leaves_no_file(self):
+        with patch.object(Path,'write_bytes',side_effect=OSError('backup unavailable')):
+            with self.assertRaises(OSError):self.files.write('new.txt','new',None)
+        self.assertFalse((self.root/'new.txt').exists())
+        with patch.object(self.files,'save_record',side_effect=OSError('journal unavailable')):
+            with self.assertRaises(OSError):self.files.write('new.txt','new',None)
+        self.assertFalse((self.root/'new.txt').exists())
+        self.assertEqual(self.files.activity(),[])
+    def test_final_journal_failure_rolls_back_existing_and_new_files(self):
+        first=self.files.write('notes.txt','original',None)
+        saved=self.files.save_record
+        def fail_done(row):
+            if row['state']=='done':raise OSError('journal unavailable')
+            return saved(row)
+        with patch.object(self.files,'save_record',side_effect=fail_done):
+            with self.assertRaises(ValueError):self.files.write('notes.txt','modified',first['version'])
+            with self.assertRaises(ValueError):self.files.write('new.txt','new',None)
+        self.assertEqual(self.files.read('notes.txt')['text'],'original')
+        self.assertFalse((self.root/'new.txt').exists())
+    def test_undo_create_journal_failure_preserves_file_and_retry(self):
+        created=self.files.write('new.txt','owner text',None)
+        saved=self.files.save_record
+        def fail_undo(row):
+            if row['state']=='undone':raise OSError('journal unavailable')
+            return saved(row)
+        with patch.object(self.files,'save_record',side_effect=fail_undo):
+            with self.assertRaises(OSError):self.files.undo(created['changeId'],created['version'])
+        self.assertEqual(self.files.read('new.txt')['text'],'owner text')
+        self.assertEqual(self.files.activity()[0]['action'],'create')
+        self.files.undo(created['changeId'],created['version'])
+        self.assertEqual(self.files.activity()[0]['action'],'undo-create')
+        self.files.undo(created['changeId'],None)
+        self.assertEqual(self.files.read('new.txt')['text'],'owner text')
+    def test_changing_root_isolates_history_even_with_matching_file_revision(self):
+        first=self.files.write('notes.txt','first workspace',None)
+        edit=self.files.write('notes.txt','same revision',first['version'])
+        other_root=self.base/'other';other_root.mkdir()
+        other=Workspace(other_root,self.base/'history')
+        other.write('notes.txt','same revision',None)
+        self.assertNotEqual(self.files.history,other.history)
+        self.assertEqual(len(other.activity()),1)
+        self.assertNotIn(edit['changeId'],json.dumps(other.activity()))
+        with self.assertRaises(OSError):other.undo(edit['changeId'],edit['version'])
+        self.assertEqual(other.read('notes.txt')['text'],'same revision')
+        reopened=Workspace(self.root,self.base/'history')
+        reopened.undo(edit['changeId'],edit['version'])
+        self.assertEqual(reopened.read('notes.txt')['text'],'first workspace')
     def test_external_edit_prevents_undo(self):
         first=self.files.write('notes.txt','original',None)
         (self.root/'notes.txt').write_text('user edit')
@@ -69,6 +121,29 @@ class WorkspaceTests(unittest.TestCase):
         self.assertNotIn('synthetic-private-text',serialized)
         self.assertNotIn(str(self.base),serialized)
         with self.assertRaises(ValueError):Workspace(self.root,self.root/'history')
+    @unittest.skipUnless(os.name=='nt','Windows extended-path I/O')
+    def test_windows_long_file_and_history_paths_preserve_identity_and_operations(self):
+        root=self.root/('r'*140)/('s'*80)
+        history=self.base/'history'/('h'*160)
+        native_path(root).mkdir(parents=True)
+        files=Workspace(root,history)
+        self.assertEqual(files.root,root)
+        self.assertGreater(len(str(root/'note.md')),260)
+        self.assertGreater(len(str(files.history/'example.bin')),260)
+        first=files.write('note.md','Long path text',None)
+        self.assertEqual(files.read('note.md')['text'],'Long path text')
+        self.assertEqual(files.listing()['items'][0]['path'],'note.md')
+        self.assertEqual(files.search('Long')['matches'][0]['path'],'note.md')
+        changed=files.write('note.md','Changed text',first['version'])
+        restored=files.undo(changed['changeId'],changed['version'])
+        self.assertEqual(files.read('note.md')['text'],'Long path text')
+        files.undo(restored['changeId'],restored['version'])
+        self.assertEqual(files.read('note.md')['text'],'Changed text')
+        created=files.write('new.md','Recoverable',None)
+        files.undo(created['changeId'],created['version'])
+        self.assertFalse(native_path(root/'new.md').exists())
+        files.undo(created['changeId'],None)
+        self.assertEqual(files.read('new.md')['text'],'Recoverable')
     def test_hardlink_cannot_read_or_modify_external_file(self):
         outside=self.base/'outside.txt';outside.write_text('outside')
         os.link(outside,self.root/'link.txt')

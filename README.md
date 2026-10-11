@@ -26,7 +26,7 @@ Starta `app/Sir David Blackenfeather.exe`. Kör `Installera skrivbordsgenväg.ps
 
 ## Röst och åtkomst
 
-ElevenLabs, modellen `eleven_multilingual_v2`, hastighet 0,9, stabilitet 0,65 och similarity boost 0,8. API-nycklar konfigureras separat och ska stanna på servern eller i tilläggets krypterade lokala fil. Admin kräver serverkontrollerad inloggning. Skrivbordsprogrammets huvudvy tillåter HTTPS till sp1e.se och www.sp1e.se. Windowsversion 1.1.0 erbjuder ett avgränsat användarinitierat parningsfönster till den lokala agentbryggan och en knapp för att öppna Admin i webbläsaren.
+ElevenLabs, modellen `eleven_multilingual_v2`, hastighet 0,9, stabilitet 0,65 och similarity boost 0,8. API-nycklar konfigureras separat och ska stanna på servern eller i tilläggets krypterade lokala fil. Admin kräver serverkontrollerad inloggning. Skrivbordsprogrammets huvudvy tillåter HTTPS till sp1e.se och www.sp1e.se. Windowsversion 1.2.0 erbjuder ett användarinitierat parningsfönster till den lokala agentbryggan, tillåter automatljud för den privata Admin-vyn och har en knapp för att öppna Admin i webbläsaren.
 
 Drift på en egen server kräver `SIR_DAVID_ELEVENLABS_API_KEY` som serverhemlighet och en ny publicering efter konfigurationen. Använd en separat begränsad nyckel för Text to Speech och Voices Read. Det lokala Codex-tillägget har en egen anslutning. API-nycklar ska inte finnas i källkod, klientfiler eller GitHub.
 
@@ -34,9 +34,9 @@ Drift på en egen server kräver `SIR_DAVID_ELEVENLABS_API_KEY` som serverhemlig
 
 Installera och logga in i Claude Code på den dator där Sir David ska användas. Hämta värdwebbplatsens lokala agenttjänst genom länken i Admin och följ paketets installationsanvisningar. Välj Claude Code som motor i Sir David, välj Anslut och godkänn den lokala parningen. Datorn och tjänsten behöver vara igång. Parningen gäller för den öppna klienten; den lagras inte permanent i webbläsaren.
 
-Status måste bekräfta abonnemangsanslutningen innan en uppgift skickas. Kontots ordinarie kvot och eventuell extra användning gäller. Modeller och resonemangsnivåer visas utifrån installerad CLI; Fable visar information om extra krediter. Ingen automatisk övergång till API-nyckel eller annan motor sker. Den gemensamma servern lagrar samtal och minne, medan Claude körs lokalt med verktyg avstängda. Nästa utvecklingsversion innehåller avgränsade lokala textfilverktyg, filhistorik och återställning. Hostintegration och aktivering granskas före publicering. Se [lokala filverktyg](docs/LOKALA-FILVERKTYG.md). Webbsurf och datorstyrning återstår.
+Status måste bekräfta abonnemangsanslutningen innan en uppgift skickas. Kontots ordinarie kvot och eventuell extra användning gäller. Modeller och resonemangsnivåer visas utifrån installerad CLI; Fable visar information om extra krediter. Ingen automatisk övergång till API-nyckel eller annan motor sker. Den gemensamma servern lagrar samtal och minne, medan Claude körs lokalt. Valfri filåtkomst ger lokala textfilverktyg, filhistorik och återställning i en enda vald arbetsmapp. Claudes inbyggda verktyg är avstängda; en lokal filmotor genomför tillåtna anrop efter separat filgodkännande. Se [lokala filverktyg](docs/LOKALA-FILVERKTYG.md). Webbsurf och datorstyrning återstår.
 
-Integrationens produktionsstatus finns i värdprojektets PR241. Verklig Claude-generering och parning i WebView2 är separata acceptanskontroller; de simulerade testerna använder inga modell- eller röstanrop.
+Filverktygen är publicerade genom värdprojektets [PR245](https://github.com/sp1e/sp1e.se/pull/245) och rättningen för långa Windows-sökvägar i [PR246](https://github.com/sp1e/sp1e.se/pull/246). Verklig Claude-generering, ljuduppspelning och parning i WebView2 är separata acceptanskontroller; de simulerade testerna använder inga modell- eller röstanrop.
 
 ## Licens
 

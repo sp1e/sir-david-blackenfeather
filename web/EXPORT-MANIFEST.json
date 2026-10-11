@@ -6,7 +6,7 @@
     "Owner-reviewed automatic speech files and additional auth-gate test dependencies copied from PR240 commit 1829fb311d74aae09d50b9ad202a9dce106e5d63. _redirects contains the relevant Admin and Sir David SQL rules only; other website routes are excluded.",
     "Claude host API tests are now copied intact with existing portal/session fixture dependencies. Canonical adapter lives in ../local-adapter; the export retains its own build script for that layout. The local bridge and source tests are exported separately; its setup ZIP is copied exactly from the reviewed host commit.",
     "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved.",
-    "Workspace assistant candidate implemented in the public module; host integration/release pending owner review. Local workspace configuration, backups and user files are excluded. No D1 or server-secret changes."
+    "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path."
   ],
   "files": [
     {
@@ -47,7 +47,7 @@
     },
     {
       "path": "assets/setup/sp1e-local-agents.zip",
-      "sha256": "b9d34599b88c8332ee6b20725f116269a12c19f53a72be25be8788257c33e92e"
+      "sha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730"
     },
     {
       "path": "functions/api/sir-david/[[route]].ts",
@@ -149,5 +149,8 @@
   "audioSourceCommit": "1829fb311d74aae09d50b9ad202a9dce106e5d63",
   "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68",
   "claudeSourceCommit": "7ca21b5bd00bd96d9879a45b112527a7de67a9cc",
-  "workspaceCandidateBase": "6ad29ac87559899fb03e63bbd1f00d32ec4c36fa"
+  "workspaceCandidateBase": "6ad29ac87559899fb03e63bbd1f00d32ec4c36fa",
+  "workspaceReviewedSourceCommit": "85e466e309ba3dcbbb09342afe21b73b25cdf663",
+  "workspaceProductionMerge": "d67450fff1114b5e446d110b2ebd6e6cffea82be",
+  "workspaceCompanionSha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730"
 }

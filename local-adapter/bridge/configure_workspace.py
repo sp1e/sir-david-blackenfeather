@@ -1,7 +1,7 @@
 """Local owner setup; this is never callable by an agent or web request."""
 from pathlib import Path
 import argparse,json,os
-from workspace_tools import Workspace
+from workspace_tools import Workspace,native_path
 
 def main():
     parser=argparse.ArgumentParser(description='Välj Sir Davids lokala arbetsmapp.')
@@ -13,7 +13,7 @@ def main():
         data={'enabled':False}
     else:
         if args.root is None or not args.root.is_absolute():parser.error('--root behöver vara en absolut sökväg till vald arbetsmapp')
-        args.root.mkdir(parents=True,exist_ok=True)
+        native_path(args.root).mkdir(parents=True,exist_ok=True)
         workspace=Workspace(args.root,config.parent/'file-history')
         data={'enabled':True,'root':str(workspace.root)}
     config.parent.mkdir(parents=True,exist_ok=True)

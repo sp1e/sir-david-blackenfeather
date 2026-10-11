@@ -19,6 +19,12 @@ CATALOG=[
 ]
 
 def digest(data):return hashlib.sha256(data).hexdigest()
+def native_path(path):
+    # Keep normal paths for containment/session identity; extend only I/O paths.
+    value=str(Path(path).absolute())
+    if os.name!='nt' or value.startswith('\\\\?\\'):return Path(value)
+    return Path('\\\\?\\UNC\\'+value[2:] if value.startswith('\\\\') else '\\\\?\\'+value)
+
 def plain(data):
     if len(data)>MAX_BYTES or any(byte<32 and byte not in (9,10,13) for byte in data):raise ValueError('Filen är för stor eller är inte en textfil.')
     try:return data.decode('utf-8')
@@ -30,10 +36,21 @@ def safe_part(part):
         not re.match(r'^(CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\.|$)',part,re.I))
 
 def check_link(path):
-    info=path.lstat()
+    info=native_path(path).lstat()
     if stat.S_ISLNK(info.st_mode) or getattr(info,'st_file_attributes',0)&0x400:
         raise ValueError('Länkar och junctions får inte användas i arbetsmappen.')
     return info
+
+def remove_opened(path,handle):
+    # Remove only the file held by our exclusive write handle.
+    if os.name=='nt':
+        import ctypes
+        from ctypes import wintypes
+        api=ctypes.WinDLL('kernel32',use_last_error=True)
+        api.SetFileInformationByHandle.argtypes=[wintypes.HANDLE,ctypes.c_int,ctypes.c_void_p,wintypes.DWORD]
+        flag=ctypes.c_ubyte(1)
+        if not api.SetFileInformationByHandle(handle,4,ctypes.byref(flag),ctypes.sizeof(flag)):raise OSError('Filen kunde inte återställas.')
+    else:os.unlink(path)
 
 @contextmanager
 def win_handle(path,access,directory=False,create=False):
@@ -43,17 +60,20 @@ def win_handle(path,access,directory=False,create=False):
     api.CreateFileW.argtypes=[wintypes.LPCWSTR,wintypes.DWORD,wintypes.DWORD,ctypes.c_void_p,wintypes.DWORD,wintypes.DWORD,wintypes.HANDLE]
     api.CreateFileW.restype=wintypes.HANDLE
     api.CloseHandle.argtypes=[wintypes.HANDLE]
-    handle=api.CreateFileW(str(path),access,1,None,1 if create else 3,0x00200000|(0x02000000 if directory else 0),None)
+    handle=api.CreateFileW(str(native_path(path)),access,1,None,1 if create else 3,0x00200000|(0x02000000 if directory else 0),None)
     if handle==ctypes.c_void_p(-1).value:raise OSError(ctypes.get_last_error(),'Filen är upptagen eller kunde inte öppnas.')
     try:yield handle
     finally:api.CloseHandle(handle)
 
 class Workspace:
     def __init__(self,root,history):
-        self.root=Path(root).absolute();self.history=Path(history).absolute();self.lock=threading.RLock()
+        self.root=Path(root).absolute();history_base=Path(history).absolute();self.lock=threading.RLock()
+        # A changed local root must never expose or restore another root's backups.
+        self.history=history_base/digest(os.path.normcase(str(self.root)).encode('utf-8'))
         if self.history==self.root or self.history.is_relative_to(self.root):raise ValueError('Filhistoriken måste ligga utanför arbetsmappen.')
-        if not self.root.is_dir():raise ValueError('Arbetsmappen saknas.')
+        if not native_path(self.root).is_dir():raise ValueError('Arbetsmappen saknas.')
         check_link(self.root)
+        self.history=native_path(self.history)
         self.history.mkdir(parents=True,exist_ok=True)
         check_link(self.history)
 
@@ -126,7 +146,7 @@ class Workspace:
                 try:
                     info=check_link(item)
                     if not safe_part(item.name) or info.st_nlink>1 and stat.S_ISREG(info.st_mode):continue
-                    items.append({'path':item.relative_to(self.root).as_posix(),'type':'directory' if item.is_dir() else 'file','bytes':info.st_size})
+                    items.append({'path':item.relative_to(self.root).as_posix(),'type':'directory' if stat.S_ISDIR(info.st_mode) else 'file','bytes':info.st_size})
                 except (ValueError,OSError):continue
                 if len(items)==100:break
         return {'items':items,'truncated':truncated or len(items)==100}
@@ -134,10 +154,10 @@ class Workspace:
     def entries(self,directory):
         # Bound enumeration before sorting, including directories with no files.
         items=[]
-        with os.scandir(directory) as scan:
+        with os.scandir(native_path(directory)) as scan:
             for item in scan:
                 if len(items)==500:return sorted(items),True
-                items.append(Path(item.path))
+                items.append(directory/item.name)
         return sorted(items),False
 
     def search(self,query):
@@ -198,19 +218,27 @@ class Workspace:
         with self.lock:
             if len(self.records())>=MAX_HISTORY:raise ValueError('Filhistoriken är full. Ändringen har inte genomförts.')
             create=expectedVersion is None
+            row={'id':str(time.time_ns())+'-'+uuid.uuid4().hex,'path':path,'beforeVersion':expectedVersion,'afterVersion':digest(data),'time':int(time.time()*1000),'action':'create' if create else 'edit','state':'pending'}
+            backup=self.history/(row['id']+'.bin')
+            # Prepare recovery before CREATE_NEW can leave any new file behind.
+            if create:
+                try:backup.write_bytes(b'');self.save_record(row)
+                except OSError:
+                    backup.unlink(missing_ok=True)
+                    (self.history/(row['id']+'.json')).unlink(missing_ok=True)
+                    raise
             # CREATE_NEW or O_EXCL rejects an existing file instead of truncating it.
-            with self.opened(target,write=True,create=create) as (stream,_):
+            with self.opened(target,write=True,create=create) as (stream,handle):
                 old=stream.read(MAX_BYTES+1);plain(old)
                 if not create and digest(old)!=expectedVersion:raise ValueError('Filen har ändrats. Läs in den igen innan du skriver.')
-                row={'id':str(time.time_ns())+'-'+uuid.uuid4().hex,'path':path,'beforeVersion':None if create else digest(old),'afterVersion':digest(data),'time':int(time.time()*1000),'action':'create' if create else 'edit','state':'pending'}
-                backup=self.history/(row['id']+'.bin');backup.write_bytes(old)
-                self.save_record(row)
+                if not create:backup.write_bytes(old);self.save_record(row)
                 try:
                     stream.seek(0);stream.write(data);stream.truncate();stream.flush();os.fsync(stream.fileno())
+                    row['state']='done';self.save_record(row)
                 except OSError:
-                    stream.seek(0);stream.write(old);stream.truncate();stream.flush();os.fsync(stream.fileno())
+                    if create:remove_opened(target,handle)
+                    else:stream.seek(0);stream.write(old);stream.truncate();stream.flush();os.fsync(stream.fileno())
                     raise ValueError('Ändringen misslyckades; föregående text återställdes.') from None
-                row['state']='done';self.save_record(row)
             return {'path':path,'version':row['afterVersion'],'changeId':row['id'],'action':row['action']}
 
     def undo(self,changeId,expectedVersion):
@@ -233,15 +261,14 @@ class Workspace:
                     data=stream.read(MAX_BYTES+1);plain(data)
                     if digest(data)!=expectedVersion:raise ValueError('Filen har ändrats. Återställningen avbröts.')
                     (self.history/(changeId+'.created.bin')).write_bytes(data)
-                    if os.name=='nt':
-                        import ctypes
-                        from ctypes import wintypes
-                        api=ctypes.WinDLL('kernel32',use_last_error=True)
-                        api.SetFileInformationByHandle.argtypes=[wintypes.HANDLE,ctypes.c_int,ctypes.c_void_p,wintypes.DWORD]
-                        flag=ctypes.c_ubyte(1)
-                        if not api.SetFileInformationByHandle(handle,4,ctypes.byref(flag),ctypes.sizeof(flag)):raise OSError('Filen kunde inte återställas.')
-                    else:os.unlink(target)
+                    # Commit the recovery action before deletion can happen.
+                    row['state']='undone';self.save_record(row)
+                    try:remove_opened(target,handle)
+                    except OSError:
+                        row['state']='done';self.save_record(row)
+                        raise
                 result={'path':row['path'],'version':None,'action':'undo-create','changeId':changeId}
+                return result
             row['state']='undone';self.save_record(row)
             return result
 
@@ -259,6 +286,7 @@ def configured():
     if not config.is_file():return None
     try:
         data=json.loads(config.read_text(encoding='utf-8'))
+        if not isinstance(data,dict):return None
         if data.get('enabled') is not True or not isinstance(data.get('root'),str) or not Path(data['root']).is_absolute():return None
         if _workspace is None or str(_workspace.root)!=data['root']:
             _workspace=Workspace(data['root'],config.parent/'file-history')
