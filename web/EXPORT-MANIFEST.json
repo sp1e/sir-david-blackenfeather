@@ -97,7 +97,7 @@
     },
     {
       "path": "scripts/sir-david.test.mjs",
-      "sha256": "4f0ab30ad8fe8deead2b7ddb86deb75c91f06461f791e148879edff4411ab0ed"
+      "sha256": "5d1416eb8311e4b55ce86ae208a57b30eee43f68d2412196b2fe88c1ab2c4d3e"
     },
     {
       "path": "site-migration-002-auth-throttle.sql",
@@ -141,7 +141,7 @@
     },
     {
       "path": "src/site/sir-david-api.ts",
-      "sha256": "b8f4ceba186c54897f83f1d9e6bea4588c3fa4d8784dd23d5994b1bd6af832a1"
+      "sha256": "e129f7c1c24d7d6e4a2501370daf1000a0ce26512b6f672bda22ea1980f81b7c"
     },
     {
       "path": "src/site/sir-david-local.ts",
@@ -149,11 +149,11 @@
     },
     {
       "path": "src/site/sir-david-outlook.ts",
-      "sha256": "466f419b022f67178c32bd2258708806ae8b1c68c15cc2fa6bf41d39da4092ff"
+      "sha256": "a357cc324db6d7a30e36467d695eebf9e39a9e4e4062ec6c915215183884a600"
     },
     {
       "path": "src/site/sir-david-planner.ts",
-      "sha256": "50c8f44fe1e67b99d7ca20df0970ac4f971368cf4f5ba8369bf7d4d63edaed7e"
+      "sha256": "d279a1cee9640c0b7d88c6feb6275c5f6da6abb206f893678140f15445c3dfa7"
     },
     {
       "path": "tsconfig.json",
@@ -167,7 +167,7 @@
     "liveInference": false,
     "secretPatternScan": "passed",
     "runtime": "requires host portal authentication and D1; no standalone login",
-    "webTests": 93,
+    "webTests": 97,
     "adapterTests": 10,
     "bridgeTests": 58,
     "nativeSelfTests": 63,
@@ -185,5 +185,10 @@
   "claudeFetchProductionMerge": "6ffada267bcf2ce6479b62be147140a2ce9ad1f8",
   "claudeFetchHostPr": "https://github.com/sp1e/sp1e.se/pull/247",
   "plannerCandidateBase": "6e1a0f74e42825929c874d7ad1cb138f2b500ebc",
-  "plannerHostMigration": "site-migration-010-sir-david-planner.sql"
+  "plannerHostMigration": "site-migration-010-sir-david-planner.sql",
+  "plannerReviewFixes": [
+    "Windows notifications default to off until saved choice",
+    "Calendar cache content and freshness read atomically and checked inside reminder claim transaction",
+    "Revoked sessions cannot delete Outlook connection/state or update failed-sync status"
+  ]
 }

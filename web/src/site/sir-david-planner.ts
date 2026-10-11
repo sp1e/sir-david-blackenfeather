@@ -11,7 +11,7 @@ export const ACTIVE_ADMIN_SQL = `EXISTS (
   WHERE s.token_hash=? AND s.profile_id=? AND s.revoked_at IS NULL AND p.revoked_at IS NULL AND p.role='admin'
     AND (s.invite_id IS NULL OR (i.revoked_at IS NULL AND i.claimed_by=p.id))
 )`;
-export const defaultPlanner = (): PlannerDocument => ({ projects: [], events: [], settings: { reminders: true, desktopNotifications: true, speakWhenOpen: true, timezone: 'Europe/Stockholm', quietStart: 22, quietEnd: 8 } });
+export const defaultPlanner = (): PlannerDocument => ({ projects: [], events: [], settings: { reminders: true, desktopNotifications: false, speakWhenOpen: true, timezone: 'Europe/Stockholm', quietStart: 22, quietEnd: 8 } });
 const bad = () => new PortalError(400, 'Kontrollera planeringens fält och datum.');
 export function object(value: unknown, keys: string[]): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !keys.includes(key)) || keys.some(key => !Object.hasOwn(value, key))) throw bad();
@@ -85,13 +85,19 @@ export async function loadPlanner(env: PortalEnv, owner: string) {
   const row = await env.DB.prepare('SELECT document_json,version FROM site_companion_planners WHERE owner_id=?').bind(owner).first<{document_json:string;version:number}>();
   return { document: row ? validatePlanner(JSON.parse(row.document_json)) : defaultPlanner(), version: row?.version??0 };
 }
+interface OutlookCache { events_json: string; last_sync: number | null; status: string }
+async function outlookCache(env: PortalEnv, owner: string): Promise<OutlookCache | null> {
+  return await env.DB.prepare('SELECT events_json,last_sync,status FROM site_companion_outlook WHERE owner_id=?').bind(owner).first<OutlookCache>();
+}
 export async function outlookEvents(env: PortalEnv, owner: string): Promise<CalendarEvent[]> {
-  const row = await env.DB.prepare('SELECT events_json FROM site_companion_outlook WHERE owner_id=?').bind(owner).first<{events_json:string}>();
+  const row = await outlookCache(env,owner);
   return row ? JSON.parse(row.events_json) as CalendarEvent[] : [];
 }
-export async function plannerSnapshot(env: PortalEnv, owner: string, now = Date.now()) {
-  const saved = await loadPlanner(env,owner), events = await outlookEvents(env,owner);
-  const calendar = await env.DB.prepare('SELECT last_sync,status FROM site_companion_outlook WHERE owner_id=?').bind(owner).first<{last_sync:number|null;status:string}>();
+export async function plannerSnapshot(env: PortalEnv, owner: string, now = Date.now(), capturedCalendar?: OutlookCache | null) {
+  const saved = await loadPlanner(env,owner);
+  // Content and freshness must describe the same committed calendar row.
+  const calendar = capturedCalendar === undefined ? await outlookCache(env,owner) : capturedCalendar;
+  const events = calendar ? JSON.parse(calendar.events_json) as CalendarEvent[] : [];
   const outlookFresh = Boolean(calendar?.last_sync && calendar.status==='connected' && now-calendar.last_sync<3600000);
   const states = (await env.DB.prepare('SELECT reminder_key,delivered_at,snooze_until FROM site_companion_reminders WHERE owner_id=?').bind(owner).all<{reminder_key:string;delivered_at:number|null;snooze_until:number}>()).results;
   const reminders = (await dueReminders(saved.document,outlookFresh?events:[],now)).filter(r=>!states.some(s=>(s.reminder_key===r.key&&s.delivered_at!==null)||(s.reminder_key===r.seriesKey&&s.snooze_until>now)));
@@ -111,19 +117,27 @@ export async function savePlanner(env: PortalEnv, session: PortalSession, value:
 }
 export async function claimReminder(env: PortalEnv, session: PortalSession, key: unknown, expected: unknown) {
   if (typeof key!=='string'|| !/^[a-f0-9]{64}$/.test(key)) throw bad();
-  const now=Date.now(), snapshot=await plannerSnapshot(env,session.profileId,now);
+  const now=Date.now(), calendar=await outlookCache(env,session.profileId), snapshot=await plannerSnapshot(env,session.profileId,now,calendar);
   if (snapshot.version!==expected) throw new PortalError(409,'Planeringen har ändrats.');
   const reminder=snapshot.reminders.find(r=>r.key===key);
   if (!reminder) throw new PortalError(409,'Påminnelsen är inte aktuell.');
+  const event=snapshot.outlookEvents.find(e=>e.id===reminder.itemId&&e.start===reminder.at);
+  const fromOutlook=reminder.kind==='event'&&event!==undefined&&await portalDigest(`event:outlook:${event.id}:${event.start}`)===key;
   const claimId=crypto.randomUUID(), day=localClock(now,snapshot.document.settings.timezone).day;
   const result=await env.DB.batch([env.DB.prepare(`INSERT INTO site_companion_reminders(owner_id,reminder_key,claim_id,claim_session,lease_until,day_key)
     SELECT ?,?,?,?,?,? WHERE COALESCE((SELECT claims FROM site_companion_reminder_days WHERE owner_id=? AND day_key=?),0)<6
     AND COALESCE((SELECT version FROM site_companion_planners WHERE owner_id=?),0)=?
+    AND ((?=0 AND NOT EXISTS(SELECT 1 FROM site_companion_outlook WHERE owner_id=?)) OR EXISTS(
+      SELECT 1 FROM site_companion_outlook WHERE owner_id=? AND events_json=? AND last_sync IS ? AND status=?))
+    AND (?=0 OR EXISTS(SELECT 1 FROM site_companion_outlook WHERE owner_id=? AND status='connected' AND last_sync>?))
     AND NOT EXISTS(SELECT 1 FROM site_companion_reminders WHERE owner_id=? AND reminder_key=? AND snooze_until>?)
     AND ${ACTIVE_ADMIN_SQL}
     ON CONFLICT(owner_id,reminder_key) DO UPDATE SET claim_id=excluded.claim_id,claim_session=excluded.claim_session,lease_until=excluded.lease_until,day_key=excluded.day_key
     WHERE site_companion_reminders.delivered_at IS NULL AND site_companion_reminders.lease_until<=? AND site_companion_reminders.snooze_until<=?`)
-    .bind(session.profileId,key,claimId,session.tokenHash,now+120000,day,session.profileId,day,session.profileId,expected,session.profileId,reminder.seriesKey,now,session.tokenHash,session.profileId,now,now),
+    .bind(session.profileId,key,claimId,session.tokenHash,now+120000,day,session.profileId,day,session.profileId,expected,
+      calendar?1:0,session.profileId,session.profileId,calendar?.events_json??null,calendar?.last_sync??null,calendar?.status??null,
+      fromOutlook?1:0,session.profileId,Date.now()-3600000,
+      session.profileId,reminder.seriesKey,now,session.tokenHash,session.profileId,now,now),
     env.DB.prepare(`INSERT INTO site_companion_reminder_days(owner_id,day_key,claims)
       SELECT ?,?,1 WHERE EXISTS(SELECT 1 FROM site_companion_reminders WHERE owner_id=? AND reminder_key=? AND claim_id=?)
       ON CONFLICT(owner_id,day_key) DO UPDATE SET claims=claims+1`).bind(session.profileId,day,session.profileId,key,claimId)
