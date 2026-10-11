@@ -12,9 +12,9 @@ internal static class Program
     [STAThread]
     static void Main(string[] args)
     {
-        if (args.Length == 2 && args[0] == "--self-test")
+        if (args.Length == 2 && (args[0] == "--self-test" || args[0] == "--policy-self-test"))
         {
-            SelfTest.Run(args[1]);
+            SelfTest.Run(args[1], args[0] == "--self-test");
             return;
         }
         ApplicationConfiguration.Initialize();
@@ -50,6 +50,19 @@ internal record AppConfig(string StartUrl)
         var url = json.RootElement.GetProperty("startUrl").GetString() ?? "";
         if (!NavigationPolicy.ValidStart(url)) throw new InvalidDataException("Appen behöver en skyddad Admin-adress på sp1e.se.");
         return new(url);
+    }
+}
+
+internal static class PermissionPolicy
+{
+    public static CoreWebView2PermissionState State(CoreWebView2PermissionKind kind, string requester, string currentPage)
+    {
+        // Audio still follows the shared sound preference in the Admin client.
+        // The embedded client permits autoplay only within that private view.
+        return kind == CoreWebView2PermissionKind.Autoplay && NavigationPolicy.ValidStart(currentPage)
+            && NavigationPolicy.SameOrigin(requester)
+            && new Uri(requester).GetLeftPart(UriPartial.Authority) == new Uri(currentPage).GetLeftPart(UriPartial.Authority)
+            ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
     }
 }
 
@@ -133,7 +146,16 @@ internal sealed class CompanionWindow : Form
             };
             browser.CoreWebView2.NewWindowRequested += async (_, e) => await OpenPairingWindow(e, environment);
             browser.CoreWebView2.DownloadStarting += (_, e) => { e.Cancel = true; status.Text = "Använd webbläsaren för nedladdningar"; };
-            browser.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+            browser.CoreWebView2.PermissionRequested += (_, e) =>
+            {
+                e.SavesInProfile = false;
+                e.State = PermissionPolicy.State(e.PermissionKind, e.Uri, browser.CoreWebView2.Source);
+            };
+            // Earlier clients persisted a blanket deny. Reset audio only so each
+            // request reaches the document-scoped policy above, without changing
+            // cookies, the shared sound preference or any other permission.
+            foreach (var origin in new[] { "https://sp1e.se", "https://www.sp1e.se" })
+                await browser.CoreWebView2.Profile.SetPermissionStateAsync(CoreWebView2PermissionKind.Autoplay, origin, CoreWebView2PermissionState.Default);
             browser.CoreWebView2.Navigate(config.StartUrl);
         }
         catch (WebView2RuntimeNotFoundException)
@@ -174,7 +196,7 @@ internal sealed class CompanionWindow : Form
             popup.CoreWebView2.NavigationStarting += (_, e) => { if (e.Uri != target) e.Cancel = true; };
             popup.CoreWebView2.NewWindowRequested += (_, e) => e.Handled = true;
             popup.CoreWebView2.DownloadStarting += (_, e) => e.Cancel = true;
-            popup.CoreWebView2.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
+            popup.CoreWebView2.PermissionRequested += (_, e) => { e.SavesInProfile = false; e.State = CoreWebView2PermissionState.Deny; };
             popup.CoreWebView2.WindowCloseRequested += (_, _) => pairing.Close();
             // Assign before navigation so WebView2 preserves the opener used by postMessage.
             request.NewWindow = popup.CoreWebView2;
@@ -206,7 +228,7 @@ internal sealed class CompanionWindow : Form
 
 internal static class SelfTest
 {
-    public static void Run(string reportPath)
+    public static void Run(string reportPath, bool requireRuntime = true)
     {
         var results = new List<object>();
         var failed = 0;
@@ -225,14 +247,22 @@ internal static class SelfTest
         Check("Pairing cannot cross site origin", !NavigationPolicy.ValidPairing(pair, "https://sp1e.se/admin/"));
         foreach (var invalid in new[] { pair + "&extra=1", pair + "#fragment", pair.Replace("4318", "4319"), pair.Replace("127.0.0.1", "localhost"), pair.Replace("/__connect/", "/__agents/jobs"), pair.Replace("www.sp1e.se", "evil.example"), pair.Replace("http://", "http://user:password@") })
             Check("Reject invalid pairing " + invalid, !NavigationPolicy.ValidPairing(invalid, admin));
+        Check("Admin autoplay allowed", PermissionPolicy.State(CoreWebView2PermissionKind.Autoplay, "https://www.sp1e.se", admin) == CoreWebView2PermissionState.Allow);
+        Check("Canonical Admin autoplay allowed", PermissionPolicy.State(CoreWebView2PermissionKind.Autoplay, "https://sp1e.se/admin/", "https://sp1e.se/admin/") == CoreWebView2PermissionState.Allow);
+        foreach (var requester in new[] { "https://evil.example", "http://127.0.0.1:4318", "https://sp1e.se", "https://user:password@www.sp1e.se", "https://www.sp1e.se:8443" })
+            Check("Autoplay requester denied " + requester, PermissionPolicy.State(CoreWebView2PermissionKind.Autoplay, requester, admin) == CoreWebView2PermissionState.Deny);
+        foreach (var page in new[] { "https://www.sp1e.se/", pair, "https://www.sp1e.se/portal/" })
+            Check("Autoplay outside Admin denied " + page, PermissionPolicy.State(CoreWebView2PermissionKind.Autoplay, "https://www.sp1e.se", page) == CoreWebView2PermissionState.Deny);
+        foreach (var kind in Enum.GetValues<CoreWebView2PermissionKind>().Where(kind => kind != CoreWebView2PermissionKind.Autoplay))
+            Check("Other permission denied " + kind, PermissionPolicy.State(kind, "https://www.sp1e.se", admin) == CoreWebView2PermissionState.Deny);
         var scratch = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(reportPath))!, "self-test-window.json");
         new WindowPreferences(800, 700, true).Save(scratch);
         Check("Window preferences survive restart", WindowPreferences.Load(scratch) == new WindowPreferences(800, 700, true));
         File.Delete(scratch);
         Check("Missing preferences use default", WindowPreferences.Load(scratch) == new WindowPreferences());
         string runtime;
-        try { runtime = CoreWebView2Environment.GetAvailableBrowserVersionString(); Check("WebView2 runtime installed", !string.IsNullOrEmpty(runtime)); }
-        catch { runtime = "unavailable"; Check("WebView2 runtime installed", false); }
+        try { runtime = CoreWebView2Environment.GetAvailableBrowserVersionString(); if (requireRuntime) Check("WebView2 runtime installed", !string.IsNullOrEmpty(runtime)); }
+        catch { runtime = "unavailable"; if (requireRuntime) Check("WebView2 runtime installed", false); }
         File.WriteAllText(reportPath, JsonSerializer.Serialize(new { application = Program.Name, failed, runtime, results }, new JsonSerializerOptions { WriteIndented = true }));
         Environment.ExitCode = failed == 0 ? 0 : 1;
     }

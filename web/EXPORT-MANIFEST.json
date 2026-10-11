@@ -5,7 +5,8 @@
     "schema.sql contains only the sessions fixture prerequisite; no unrelated application tables.",
     "Owner-reviewed automatic speech files and additional auth-gate test dependencies copied from PR240 commit 1829fb311d74aae09d50b9ad202a9dce106e5d63. _redirects contains the relevant Admin and Sir David SQL rules only; other website routes are excluded.",
     "Claude host API tests are now copied intact with existing portal/session fixture dependencies. Canonical adapter lives in ../local-adapter; the export retains its own build script for that layout. The local bridge and source tests are exported separately; its setup ZIP is copied exactly from the reviewed host commit.",
-    "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved."
+    "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved.",
+    "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path."
   ],
   "files": [
     {
@@ -26,19 +27,19 @@
     },
     {
       "path": "admin/claude-adapter.js",
-      "sha256": "5fc3b30d1e159ad8562708cfb16926887f69dadf897935d557d1b9c5cf4a836c"
+      "sha256": "5b504d4dbeae38f21d9ac9bc645d285cfce03bad7e0fc7a450e8cbb456866da4"
     },
     {
       "path": "admin/index.html",
-      "sha256": "26a56c3661f0be84cd8e2690ff7cf33c418acbaaf7c4518a7f9e91e80fe00dc7"
+      "sha256": "d60724c52455d8b068c792b4351a09a4a67bb7d9c46b3e63d86e0a10df960577"
     },
     {
       "path": "admin/sir-david.css",
-      "sha256": "4cd730cdf1aa3cef0a0dc3fd050d4e49a45bb03777abe095d4b13770f4c562a9"
+      "sha256": "ef13d89dbc3a31a1a5e61bd6c3ed9062c9c7321bab4d7e3ded54258de334d30f"
     },
     {
       "path": "admin/sir-david.js",
-      "sha256": "fb65a0d8c5b9abf7f2fee1d2cb827d250ba0bbd3b63bd46c472684511ce954bc"
+      "sha256": "2a9e24cbb74e20db97ae7d743ba0a116cbedb0845cc9ca346a7ac8915c501991"
     },
     {
       "path": "assets/landing/world/media/ozymandias-v4-r1-poster.webp",
@@ -46,7 +47,7 @@
     },
     {
       "path": "assets/setup/sp1e-local-agents.zip",
-      "sha256": "ad2f3ed5cc0778c1e375ed3be61b7add00671a7fa9707c2728b586e2b07b38f4"
+      "sha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730"
     },
     {
       "path": "functions/api/sir-david/[[route]].ts",
@@ -78,7 +79,7 @@
     },
     {
       "path": "scripts/sir-david-claude-ui.test.mjs",
-      "sha256": "04f1f19fc00ab85bac081c6d50150a5257f2b1f7a8c69da93f01f287567ae87e"
+      "sha256": "adc129b8a74df64526a6715c4b6c2e1fe9a5c598ae50808c0e246124dcaf5bc2"
     },
     {
       "path": "scripts/sir-david-ui.test.mjs",
@@ -147,5 +148,9 @@
   },
   "audioSourceCommit": "1829fb311d74aae09d50b9ad202a9dce106e5d63",
   "audioProductionCommit": "d9707ae616503b71bdea697598719ed0500f3e68",
-  "claudeSourceCommit": "7ca21b5bd00bd96d9879a45b112527a7de67a9cc"
+  "claudeSourceCommit": "7ca21b5bd00bd96d9879a45b112527a7de67a9cc",
+  "workspaceCandidateBase": "6ad29ac87559899fb03e63bbd1f00d32ec4c36fa",
+  "workspaceReviewedSourceCommit": "85e466e309ba3dcbbb09342afe21b73b25cdf663",
+  "workspaceProductionMerge": "d67450fff1114b5e446d110b2ebd6e6cffea82be",
+  "workspaceCompanionSha256": "10ea3f17eb5fd77fe0615a6c4e0498a7137bb545f775bb75f3b12ebfccdf2730"
 }

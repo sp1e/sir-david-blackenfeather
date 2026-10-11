@@ -81,11 +81,13 @@ export class ClaudeAdapter {
     return value;
   }
   async status(signal) { return this.#request('/__agents/status?provider=claude&kind=sir-david',{signal}); }
+  async workspace(signal) { return this.#request('/__agents/workspace',{signal}); }
+  async undo(changeId,expectedVersion,signal) { return this.#request('/__agents/workspace/undo',{body:{changeId,expectedVersion},signal}); }
   async disconnect() {
     const token = this.#token; this.#generation++; this.#token=null; this.#expiresAt=0; this.#active?.abort(); this.#pairing?.abort();
     if (token) await this.#request('/__agents/disconnect',{token,body:{}}).catch(() => {});
   }
-  async answer(prepared,{signal,model='',effort=''} = {}) {
+  async answer(prepared,{signal,model='',effort='',workspace=false} = {}) {
     if (this.#active) throw Error('Claude arbetar redan.');
     const request = localRequest(prepared,this.now()), turn={...prepared.turn}, generation = this.#generation, token = this.#token;
     const controller = new AbortController(); this.#active=controller;
@@ -96,6 +98,10 @@ export class ClaudeAdapter {
       if (!claude?.installed || !claude.signedIn) throw Error('Logga in i Claude Code på datorn.');
       // Require explicit bridge evidence; never silently replace subscription with API billing.
       if (claude.billingMode !== 'subscription') throw Error('Bryggan måste bekräfta Claude-abonnemanget före aktivering.');
+      if (workspace) {
+        if (claude.workspace?.enabled !== true) throw Error('Anslut igen och godkänn arbetsmappens filåtkomst.');
+        request.workspace=true;
+      }
       if (model || effort) {
         const choice=claude.models?.find(item=>item.id===model);
         if (!choice || (effort && !choice.efforts?.includes(effort))) throw Error('Välj en tillgänglig Claude-modell och nivå.');

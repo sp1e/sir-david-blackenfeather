@@ -8,6 +8,7 @@
   let autoSpeak = false, preferencesReady = false, preferencesBusy = false, preferenceRevision = -1, voicePlayer = null, preferencesFailed = false;
   const silentAudio = new URL('/admin/assets/silence.wav', window.location.origin).href;
   let localReady = false, localConnecting = false, localModels = [], pairController = null;
+  let workspaceReady = false, workspaceName = '', filesBusy = false;
   // Unsupported preview origins must not stop the existing cloud companion.
   let localAdapter = null;
   if (window.SirDavidLocal) {
@@ -35,6 +36,9 @@
     if (!provider?.installed || !provider.signedIn || provider.billingMode !== 'subscription') {
       localReady = false; update(); throw Error('Claude-inloggningen kunde inte verifieras. Uppdatera och starta om den lokala anslutningen.');
     }
+    workspaceReady = provider.workspace?.enabled === true;
+    workspaceName = workspaceReady && typeof provider.workspace.name === 'string' ? provider.workspace.name.slice(0,100) : '';
+    if (!workspaceReady) $('files-mode').checked = false;
     const selected = $('claude-model').value, effort = $('claude-effort').value;
     localModels = Array.isArray(provider.models) ? provider.models.filter(item => item && typeof item.id === 'string' && /^[a-z][a-z0-9-]{0,79}$/.test(item.id) && typeof item.name === 'string' && Array.isArray(item.efforts)) : [];
     $('claude-model').replaceChildren(new Option('Claudes standardmodell', ''));
@@ -45,14 +49,37 @@
     if (selected && (!choice || (effort && !choice.efforts.includes(effort)))) throw Error('Det tidigare modellvalet är inte tillgängligt. Välj modell och nivå igen.');
   }
   $('provider').addEventListener('change', () => { cancelSpeech(); $('claude-options').hidden = !isLocal(); $('model').hidden = isLocal(); update(); });
+  async function fileActivity() {
+    if (!authorized || !workspaceReady || !localAdapter?.connected) return;
+    const ownEpoch = epoch;
+    await api('preferences');
+    const value = await localAdapter.workspace();
+    if (!authorized || ownEpoch !== epoch) return;
+    $('file-activity').replaceChildren();
+    for (const item of Array.isArray(value.activity) ? value.activity.slice(0,20) : []) {
+      if (!item || typeof item.path !== 'string' || !/^[0-9]{10,22}-[a-f0-9]{32}$/.test(item.id) || !(item.action === 'undo-create' && item.afterVersion === null) && !/^[a-f0-9]{64}$/.test(item.afterVersion)) continue;
+      const row = document.createElement('li'), label = document.createElement('span'), button = document.createElement('button');
+      const action = {create:'Skapad',edit:'Ändrad','undo-create':'Borttagen vid återställning'}[item.action] || 'Ändrad';
+      label.textContent = item.path.slice(0,240) + ' · ' + action; button.className = 'pill'; button.type = 'button'; button.textContent = item.action === 'undo-create' ? 'Återskapa filen' : 'Återställ'; button.disabled = busy || filesBusy;
+      button.addEventListener('click', async () => {
+        if (busy || filesBusy || !authorized) return;
+        filesBusy = true; update();
+        try { await api('preferences'); if (!authorized || ownEpoch !== epoch) return; await localAdapter.undo(item.id,item.afterVersion); if (!authorized || ownEpoch !== epoch) return; $('file-status').textContent = 'Ändringen är återställd.'; await fileActivity(); }
+        catch (error) { if (authorized && ownEpoch === epoch) $('file-status').textContent = 'Filen har ändrats eller kunde inte återställas. Läs in filhistoriken igen.'; }
+        finally { filesBusy = false; update(); }
+      });
+      row.append(label,button); $('file-activity').append(row);
+    }
+  }
+  $('reload-files').addEventListener('click', () => fileActivity().catch(() => { if (authorized) $('file-status').textContent = 'Filhistoriken kunde inte hämtas. Anslut igen.'; }));
   $('claude-model').addEventListener('change', claudeEfforts);
   $('connect-claude').addEventListener('click', async () => {
     if (busy || !authorized) return;
     if (localConnecting) { pairController?.abort(); return; }
-    if (localAdapter?.connected) { localReady = false; await localAdapter.disconnect(); update(); return; }
+    if (localAdapter?.connected) { localReady = false; workspaceReady = false; $('files-mode').checked = false; $('file-activity').replaceChildren(); await localAdapter.disconnect(); update(); return; }
     if (!localAdapter) { $('status').textContent = 'Lokal Claude ansluts från sp1e.se. Öppna din Admin-sida där.'; return; }
     localConnecting = true; pairController = new AbortController(); update(); $('status').textContent = 'Godkänn anslutningen i det lokala fönstret.';
-    try { await localAdapter.pair({ signal: pairController.signal }); await verifyClaude(pairController.signal); $('status').textContent = 'Claude Code är anslutet. Sir David använder samma minne och röst.'; }
+    try { await localAdapter.pair({ signal: pairController.signal }); await verifyClaude(pairController.signal); await fileActivity(); $('status').textContent = 'Claude Code är anslutet. Sir David använder samma minne och röst.'; }
     catch (error) { localReady = false; await localAdapter.disconnect(); $('status').textContent = error.name === 'AbortError' ? 'Anslutningen avbröts.' : error.message; }
     finally { localConnecting = false; pairController = null; update(); }
   });
@@ -83,7 +110,7 @@
   async function api(route, options = {}) {
     const response = await fetch('/api/sir-david/' + route, { credentials: 'same-origin', cache: 'no-store', ...options });
     if (!response.ok) {
-      if (response.status === 401 || response.status === 403) { authorized = false; connected = false; speechConnected = false; localReady = false; pairController?.abort(); controller?.abort(); localAdapter?.disconnect(); cancelSpeech(); $('messages').replaceChildren(); $('memories').replaceChildren(); history = []; update(); }
+      if (response.status === 401 || response.status === 403) { authorized = false; connected = false; speechConnected = false; localReady = false; workspaceReady = false; $('files-mode').checked = false; $('file-activity').replaceChildren(); pairController?.abort(); controller?.abort(); localAdapter?.disconnect(); cancelSpeech(); $('messages').replaceChildren(); $('memories').replaceChildren(); history = []; update(); }
       const data = await response.json().catch(() => ({}));
       throw Error(data.error || 'Anropet kunde inte slutföras.');
     }
@@ -91,7 +118,12 @@
   }
   const post = (route, body, signal) => api(route, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal });
   function update() {
-    $('send').disabled = busy || !canChat(); $('model').disabled = busy || !connected;
+    $('send').disabled = busy || filesBusy || !canChat(); $('model').disabled = busy || !connected;
+    $('files-mode').disabled = busy || filesBusy || !authorized || !workspaceReady || !localAdapter?.connected;
+    $('file-panel').hidden = !authorized || !isLocal() || !workspaceReady || !localAdapter?.connected;
+    $('reload-files').disabled = busy || filesBusy;
+    $('file-activity').querySelectorAll('button').forEach(button => { button.disabled = busy || filesBusy; });
+    $('workspace-note').textContent = workspaceReady && localAdapter?.connected ? 'Arbetsmapp: ' + workspaceName + '. Filinnehåll som behövs för uppdraget skickas till Claude. Ändringar får lokal filhistorik.' : 'Anslut Claude och godkänn filåtkomst i det lokala fönstret. Filåtkomsten gäller bara din valda arbetsmapp.';
     $('provider').disabled = busy || localConnecting || !authorized;
     $('claude-model').disabled = busy || !localReady;
     $('claude-effort').disabled = busy || !localReady || !localModels.find(item => item.id === $('claude-model').value)?.efforts.length;
@@ -210,13 +242,15 @@
     }
   }
   async function localChat(content, signal, ownEpoch) {
+    const wantsFiles = $('files-mode').checked;
     let turn;
     try {
       await verifyClaude(signal);
+      if (wantsFiles && !workspaceReady) throw Error('Filåtkomsten har upphört. Anslut igen innan du fortsätter filuppdraget.');
       const prepared = await (await post('local/prepare', { text: content, version: revision, provider: 'claude' }, signal)).json();
       turn = prepared.turn;
       if (signal.aborted || ownEpoch !== epoch || !authorized) throw new DOMException('Avbrutet', 'AbortError');
-      const answer = await localAdapter.answer(prepared, { signal, model: $('claude-model').value, effort: $('claude-effort').value });
+      const answer = await localAdapter.answer(prepared, { signal, model: $('claude-model').value, effort: $('claude-effort').value, workspace: wantsFiles });
       if (signal.aborted || ownEpoch !== epoch || !authorized) throw new DOMException('Avbrutet', 'AbortError');
       return await (await post('local/commit', answer, signal)).json();
     } finally {
@@ -224,7 +258,7 @@
     }
   }
   $('chat-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (busy || !canChat()) return;
+    event.preventDefault(); if (busy || filesBusy || !canChat()) return;
     const content = $('prompt').value.trim(); if (!content) return;
     cancelSpeech(); if (autoSpeak) primeAudio();
     busy = true; controller = new AbortController(); const ownEpoch = epoch; update(); $('status').textContent = 'Sir David funderar…';
@@ -238,7 +272,7 @@
         if (reply?.role === 'assistant') speakContent(reply.content);
       }
     } catch (error) { if (ownEpoch === epoch) $('status').textContent = error.name === 'AbortError' ? 'Anropet avbröts.' : error.message; }
-    finally { busy = false; controller = null; if ($('status').textContent === 'Avbryter svaret…') $('status').textContent = 'Svaret avbröts.'; update(); }
+    finally { busy = false; controller = null; if ($('status').textContent === 'Avbryter svaret…') $('status').textContent = 'Svaret avbröts. Kontrollera filhistoriken om du arbetade med filer.'; update(); if (workspaceReady && authorized && !$('sir-david-panel').hidden) fileActivity().catch(() => {}); }
   });
   $('new-chat').addEventListener('click', async () => {
     if (!confirm('Radera det gemensamma samtalet? Sparade minnesanteckningar behålls.')) return;

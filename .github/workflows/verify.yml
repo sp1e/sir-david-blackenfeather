@@ -32,5 +32,6 @@ jobs:
         with:
           python-version: '3.13'
       - run: dotnet build desktop/SirDavid.csproj -c Release
+      - run: '$p = Start-Process -FilePath "desktop/bin/Release/net10.0-windows/Sir David Blackenfeather.exe" -ArgumentList @("--policy-self-test", "${{ runner.temp }}/sir-david-self-test.json") -Wait -PassThru -WindowStyle Hidden; if ($p.ExitCode -ne 0) { exit $p.ExitCode }'
       - run: python -m unittest discover -s codex-addon -p "test_*.py"
-      - run: python -m unittest discover -s local-adapter/bridge -p "test_agent_bridge.py"
+      - run: python -m unittest discover -s local-adapter/bridge -p "test_*.py"
