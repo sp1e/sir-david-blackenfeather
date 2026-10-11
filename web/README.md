@@ -31,7 +31,9 @@ Vanlig `/admin/` visar korpikonen. Klick öppnar panelen; Escape eller stängkna
 
 ## Exportens gränser
 
-59 API- och DOM-tester passerar i exporten, inklusive Admin-gate, inloggningsretur, ljudlagring, historik, Stopp, mute, lokal Claude-pipeline och sena svar. Därutöver finns nio adaptertester och 22 tester för den exporterade bryggan. Kärnmodulen kan byggas och testas självständigt, men drift kräver integrationen ovan. Verklig Claude-generering och ljuduppspelning i webbläsare/WebView2 kräver separat kontroll.
+API- och DOM-testerna täcker Admin-gate, inloggningsretur, ljudlagring, historik, Stopp, mute, lokal Claude-pipeline och sena svar. Adapter och brygga har egna tester. Kärnmodulen kan byggas och testas självständigt, men drift kräver integrationen ovan. Verklig Claude-generering och ljuduppspelning i webbläsare/WebView2 kräver separat kontroll.
+
+Planeringsmodulen kräver dessutom migration `site-migration-010-sir-david-planner.sql` före publicering av den nya API-koden. Numret följer värdens 008-projekt och 009-samredigering; kontrollera värdens aktuella historik före integration. Nya tester täcker ägarisolering, versionskonflikter, nattpaus och sommartid, påminnelsereservationer, daglig gräns, snooze, kryptering, PKCE, kalendercache och ljud-/notisvillkor. Outlook är valfritt och visas som ej konfigurerat tills serveruppgifterna har lagts till. Se [setupguiden](../docs/PLANERING-OCH-OUTLOOK.md).
 
 Migrering 007 skapar kortlivade, sessionsbundna Claude-turer och ska tillämpas före aktivering av prepare/commit/cancel. Den lokala tjänstens setup-paket ligger i `assets/setup/sp1e-local-agents.zip`; källa och tester finns i `../local-adapter/bridge`. Adapterns kanoniska källa ligger i `../local-adapter/claude-adapter.mjs`. Bygget bevarar exportens egen katalogstruktur.
 

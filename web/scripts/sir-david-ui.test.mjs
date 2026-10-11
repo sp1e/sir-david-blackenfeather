@@ -4,12 +4,15 @@ import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 const html = fs.readFileSync('admin/index.html', 'utf8');
 const script = fs.readFileSync('admin/sir-david.js', 'utf8');
+const plannerScript = fs.readFileSync('admin/sir-david-planner.js', 'utf8');
 const settle = () => new Promise(resolve => setTimeout(resolve, 25));
 
 async function audioFixture(t, options = {}) {
   const dom=new JSDOM(html,{url:'https://www.sp1e.se/admin/?panel=sir-david',runScripts:'outside-only'});
-  t.after(()=>dom.window.close());
+  t.after(async()=>{dom.window.dispatchEvent(new dom.window.Event('pagehide'));await settle();dom.window.close();});
   const w=dom.window, calls=[], played=[], pauses=[];
+  let nativeMessages;
+  if(options.native){nativeMessages=new w.EventTarget();nativeMessages.postMessage=()=>{};Object.defineProperty(w,'chrome',{value:{webview:nativeMessages}});}
   let preferences={autoSpeak:options.autoSpeak??true,version:0}, pendingSpeech, pendingChat, poll;
   if(options.capturePoll){w.setInterval=callback=>{poll=callback;return 1;};w.clearInterval=()=>{};}
   const conversation={version:0,messages:[{role:'assistant',content:'Old reply, do not replay.'}]};
@@ -44,12 +47,17 @@ async function audioFixture(t, options = {}) {
       const response={ok:true,blob:async()=>new w.Blob(['synthetic audio'])};
       if(options.delaySpeech)return new Promise(resolve=>{pendingSpeech=()=>resolve(response);});
       return response;
-    } else throw Error('Unexpected endpoint');
+    } else if(options.withPlanner&&url.endsWith('/planner'))data={planner:{version:0,document:{projects:[],events:[],settings:{reminders:false,desktopNotifications:false,speakWhenOpen:true,timezone:'Europe/Stockholm',quietStart:22,quietEnd:8}},focus:[],reminders:[],outlookEvents:[],serverTime:new Date().toISOString(),quiet:false}};
+    else if(options.withPlanner&&url.endsWith('/outlook/status'))data={outlook:{configured:false,connected:false}};
+    else throw Error('Unexpected endpoint');
     return{ok:true,json:async()=>data};
   };
-  w.eval(script);await settle();
-  return{w,calls,played,pauses,preferences:()=>preferences,poll:()=>poll(),releaseSpeech:()=>pendingSpeech(),releaseChat:()=>pendingChat(),async submit(){w.document.getElementById('prompt').value='Hello';w.document.getElementById('chat-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();}};
+  if(options.withPlanner)w.eval(plannerScript);w.eval(script);await settle();
+  return{w,calls,played,pauses,preferences:()=>preferences,poll:()=>poll(),releaseSpeech:()=>pendingSpeech(),releaseChat:()=>pendingChat(),nativeVisible(value){nativeMessages.dispatchEvent(new w.MessageEvent('message',{data:{type:'sir-david-native-tick',visible:value}}));},async submit(){w.document.getElementById('prompt').value='Hello';w.document.getElementById('chat-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();}};
 }
+
+test('full Admin initializes the shared planner after authentication and keeps the normal voice path',async t=>{const f=await audioFixture(t,{withPlanner:true});assert.equal(f.w.document.getElementById('planner-panel').hidden,false);assert.ok(f.calls.some(([url])=>url.endsWith('/planner')));assert.equal(f.played.length,0);await f.submit();assert.equal(f.played.length,1);});
+test('native hidden-window signal stops speech and prevents speaking a new chat answer until reopened',async t=>{const f=await audioFixture(t,{native:true,withPlanner:true});f.nativeVisible(false);await f.submit();assert.equal(f.calls.some(([url])=>url.endsWith('/speech')),false);f.nativeVisible(true);await f.submit();assert.equal(f.played.length,1);});
 test('new replies speak automatically in bounded chunks, restored history stays silent',async t=>{
   const f=await audioFixture(t,{reply:'A'.repeat(1200)+'B'.repeat(80)});
   assert.equal(f.played.length,0);assert.equal(f.calls.filter(([url])=>url.endsWith('/speech')).length,0);

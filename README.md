@@ -2,6 +2,8 @@
 
 Simons korpkompanjon: en brittisk gentleman omkring 70 år med mörk, djup röst och torr humor. Projektet innehåller ett Windowsprogram, en privat Admin-klient, serverkod för gemensamt minne och personlighet, korpgrafik och ett valfritt lokalt Codex-rösttillägg.
 
+Nästa version, 1.3, lägger till gemensamma projekt, deadlines, nästa steg, schema och Windowsnotiser med sparade påminnelseval. Outlook-kopplingen läser Microsoft 365-jobbkalendern efter separat appregistrering och kalendergodkännande. Den installerade versionen och hemsidan behöver uppdateras tillsammans innan dessa funktioner kan användas. Se [planering och Outlook](docs/PLANERING-OCH-OUTLOOK.md) för setup och funktionens gränser.
+
 ## Delar
 
 - `desktop/`: Windows Forms och WebView2. Öppnar den privata Admin-vyn på sp1e.se.
