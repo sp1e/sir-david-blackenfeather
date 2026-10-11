@@ -59,7 +59,7 @@ export async function outlookConnect(request:Request, env:OutlookEnv, session:Po
   const redirect=origin+'/api/sir-david/outlook/callback', state=portalRandomToken(), verifier=portalRandomToken();
   const challenge=bytes(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(verifier))));
   const saved=await env.DB.batch([
-    env.DB.prepare('DELETE FROM site_companion_outlook_states WHERE expires_at<? OR owner_id=?').bind(Date.now(),session.profileId),
+    env.DB.prepare(`DELETE FROM site_companion_outlook_states WHERE owner_id=? AND ${ACTIVE_ADMIN_SQL}`).bind(session.profileId,session.tokenHash,session.profileId),
     env.DB.prepare(`INSERT INTO site_companion_outlook_states(state_hash,owner_id,session_hash,verifier_cipher,redirect_uri,expires_at) SELECT ?,?,?,?,?,? WHERE ${ACTIVE_ADMIN_SQL}`)
       .bind(await portalDigest(state),session.profileId,session.tokenHash,await encrypt(env,session.profileId,{verifier}),redirect,Date.now()+10*60000,session.tokenHash,session.profileId)
   ]);
@@ -89,8 +89,13 @@ export async function outlookCallback(request:Request, env:OutlookEnv, session:P
   target.searchParams.set('calendar','connected');
   return new Response(null,{status:303,headers:{Location:target.href,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});
 }
-export async function outlookDisconnect(env:OutlookEnv, owner:string) {
-  await env.DB.batch([env.DB.prepare('DELETE FROM site_companion_outlook WHERE owner_id=?').bind(owner),env.DB.prepare('DELETE FROM site_companion_outlook_states WHERE owner_id=?').bind(owner)]);
+export async function outlookDisconnect(env:OutlookEnv, session:PortalSession) {
+  const owner=session.profileId;
+  await env.DB.batch([
+    env.DB.prepare(`DELETE FROM site_companion_outlook WHERE owner_id=? AND ${ACTIVE_ADMIN_SQL}`).bind(owner,session.tokenHash,owner),
+    env.DB.prepare(`DELETE FROM site_companion_outlook_states WHERE owner_id=? AND ${ACTIVE_ADMIN_SQL}`).bind(owner,session.tokenHash,owner)
+  ]);
+  if(!await env.DB.prepare(`SELECT 1 AS active WHERE ${ACTIVE_ADMIN_SQL}`).bind(session.tokenHash,owner).first())throw new PortalError(409,'Admin-anslutningen har gått ut.');
   return {disconnected:true};
 }
 export function normalizeGraphEvent(value:unknown):CalendarEvent|null {
@@ -142,7 +147,7 @@ export async function outlookSync(request:Request, env:OutlookEnv, session:Porta
     if(!updated)throw new PortalError(409,'Outlook-anslutningen har ändrats.');
     return {outlook:await outlookStatus(env,owner),count:events.length,cached:false};
   } catch(error) {
-    await env.DB.prepare("UPDATE site_companion_outlook SET status='needs-attention',sync_id=NULL,sync_until=0 WHERE owner_id=? AND sync_id=?").bind(owner,syncId).run();
+    await env.DB.prepare(`UPDATE site_companion_outlook SET status='needs-attention',sync_id=NULL,sync_until=0 WHERE owner_id=? AND sync_id=? AND ${ACTIVE_ADMIN_SQL}`).bind(owner,syncId,session.tokenHash,owner).run();
     throw error;
   }
 }

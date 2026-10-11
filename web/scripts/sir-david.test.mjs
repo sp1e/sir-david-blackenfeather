@@ -81,6 +81,61 @@ const outlookConfig={SIR_DAVID_OUTLOOK_CLIENT_ID:'11111111-1111-4111-8111-111111
 function productionRequest(route,options={}) {const prior=request(route,options),headers=new Headers(prior.headers);if(prior.method==='POST')headers.set('Origin','https://sp1e.se');return new Request('https://sp1e.se/api/sir-david/'+route,{method:prior.method,headers,...(['GET','HEAD'].includes(prior.method)?{}:{body:JSON.stringify(options.payload??{})})});}
 const productionCall=(env,route,options)=>handleSirDavidRequest(productionRequest(route,options),env,route);
 
+test('fresh planning defaults never opt in to Windows notifications; an explicit saved choice is shared',async t=>{
+  const env=fixture(t),initial=await planner(env);
+  assert.equal(initial.version,0);assert.equal(initial.document.settings.desktopNotifications,false);
+  assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_planners').get().n,0);
+  initial.document.settings.desktopNotifications=true;assert.equal((await savePlan(env,initial.document)).status,200);
+  assert.equal((await planner(env)).document.settings.desktopNotifications,true);
+  assert.equal((await planner(env,'other')).document.settings.desktopNotifications,false);
+});
+
+test('calendar changes between snapshot and reminder transaction reject stale claims without consuming quota',async t=>{
+  for(const mode of ['disconnect','removed','resync','needs-attention','expired','reconnect']) {
+    const env=fixture(t,outlookConfig),doc=plan();await savePlan(env,doc);
+    const event={id:'meeting',title:'Synthetic meeting',start:new Date(Date.now()+10*60000).toISOString(),end:new Date(Date.now()+3600000).toISOString(),allDay:false,source:'outlook'};
+    env.sql.prepare('INSERT INTO site_companion_outlook(owner_id,tokens_cipher,events_json,last_sync) VALUES(?,?,?,?)').run('admin','synthetic-cipher',JSON.stringify([event]),Date.now());
+    const current=(await planner(env)).reminders[0];assert.ok(current);
+    const batch=env.DB.batch;
+    t.mock.method(env.DB,'batch',async statements=>{
+      if(mode==='disconnect')env.sql.prepare("DELETE FROM site_companion_outlook WHERE owner_id='admin'").run();
+      if(mode==='removed')env.sql.prepare("UPDATE site_companion_outlook SET events_json='[]' WHERE owner_id='admin'").run();
+      if(mode==='resync')env.sql.prepare("UPDATE site_companion_outlook SET last_sync=last_sync+1 WHERE owner_id='admin'").run();
+      if(mode==='needs-attention')env.sql.prepare("UPDATE site_companion_outlook SET status='needs-attention' WHERE owner_id='admin'").run();
+      if(mode==='expired')env.sql.prepare("UPDATE site_companion_outlook SET last_sync=? WHERE owner_id='admin'").run(Date.now()-2*3600000);
+      if(mode==='reconnect')env.sql.prepare("UPDATE site_companion_outlook SET tokens_cipher='new-cipher',events_json='[]',last_sync=NULL WHERE owner_id='admin'").run();
+      return batch(statements);
+    });
+    assert.equal((await call(env,'planner/claim',{method:'POST',payload:{key:current.key,version:1}})).status,409,mode);
+    assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_reminders').get().n,0,mode);
+    assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_reminder_days').get().n,0,mode);
+  }
+});
+
+test('revocation after the request guard cannot delete calendar connections or OAuth states',async t=>{
+  for(const mode of ['connect','disconnect']) {
+    const env=fixture(t,outlookConfig),calls=upstream(t);
+    for(const owner of ['admin','other']) {
+      env.sql.prepare('INSERT INTO site_companion_outlook(owner_id,tokens_cipher) VALUES(?,?)').run(owner,'synthetic-cipher');
+      env.sql.prepare('INSERT INTO site_companion_outlook_states(state_hash,owner_id,session_hash,verifier_cipher,redirect_uri,expires_at) VALUES(?,?,?,?,?,?)').run(hash(owner),owner,hash(tokens[owner]),'synthetic-verifier','https://sp1e.se/api/sir-david/outlook/callback',Date.now()+60000);
+    }
+    const batch=env.DB.batch;
+    t.mock.method(env.DB,'batch',async statements=>{env.sql.prepare("UPDATE site_portal_sessions SET revoked_at='now' WHERE profile_id='admin'").run();return batch(statements);});
+    assert.equal((await productionCall(env,'outlook/'+mode,{method:'POST'})).status,409,mode);
+    assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_outlook').get().n,2,mode);
+    assert.equal(env.sql.prepare('SELECT count(*) n FROM site_companion_outlook_states').get().n,2,mode);
+    assert.equal(calls.length,0,mode);
+  }
+});
+
+test('revoked sync cannot mutate the calendar status in its error cleanup',async t=>{
+  const env=fixture(t,outlookConfig);
+  env.sql.prepare('INSERT INTO site_companion_outlook(owner_id,tokens_cipher,last_sync) VALUES(?,?,?)').run('admin',await encrypt(outlookConfig,'admin',{access:'synthetic-access',refresh:'synthetic-refresh',expires:Date.now()+3600000}),Date.now());
+  upstream(t,()=>{env.sql.prepare("UPDATE site_portal_sessions SET revoked_at='now' WHERE profile_id='admin'").run();return new Response(null,{status:401});});
+  assert.equal((await call(env,'outlook/sync',{method:'POST'})).status,409);
+  assert.equal(env.sql.prepare("SELECT status FROM site_companion_outlook WHERE owner_id='admin'").get().status,'connected');
+});
+
 test('planner routes reject visitors, cross-site traffic and revoked Admin without upstream use',async t=>{
   const env=fixture(t),calls=upstream(t);
   for(const role of [null,'guest','clique'])for(const [route,method,payload] of [['planner','GET'],['planner','PUT',{document:plan(),version:0}],['planner/claim','POST',{key:'a'.repeat(64),version:0}],['planner/ack','POST',{key:'a'.repeat(64),claimId:'x'}],['planner/snooze','POST',{key:'a'.repeat(64),minutes:60}],['outlook/status','GET'],['outlook/connect','POST',{}],['outlook/sync','POST',{}],['outlook/disconnect','POST',{}]])assert.equal((await call(env,route,{role,method,payload})).status,role?403:401);

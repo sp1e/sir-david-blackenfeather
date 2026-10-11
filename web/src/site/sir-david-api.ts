@@ -136,7 +136,7 @@ export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, 
     if (route === 'outlook/status' && request.method === 'GET') return json({ outlook: await outlookStatus(env, owner) });
     if (route === 'outlook/connect' && request.method === 'POST') { await body(request, []); return json(await outlookConnect(request, env, session)); }
     if (route === 'outlook/sync' && request.method === 'POST') { await body(request, []); return json(await outlookSync(request, env, session)); }
-    if (route === 'outlook/disconnect' && request.method === 'POST') { await body(request, []); return json(await outlookDisconnect(env, owner)); }
+    if (route === 'outlook/disconnect' && request.method === 'POST') { await body(request, []); return json(await outlookDisconnect(env, session)); }
     if (route === 'local/prepare' && request.method === 'POST') {
       const input = await body(request, ['text', 'version', 'provider']);
       if (input.provider !== 'claude') throw new PortalError(400, 'Välj lokal Claude Code.');
