@@ -41,7 +41,7 @@
     },
     {
       "path": "admin/sir-david-planner.js",
-      "sha256": "e813979e80428da8ca18c3ca4a6fbe4c46b6f253d8fc8ad0ee121c4ab10590df"
+      "sha256": "3a972e4b07f8e69badda8d1a961b85db7906e74f3a1f44164a51a9c03ec5e90b"
     },
     {
       "path": "admin/sir-david.css",
@@ -89,7 +89,7 @@
     },
     {
       "path": "scripts/sir-david-planner-ui.test.mjs",
-      "sha256": "f084f185a774e5bfa0b7d1f79a4b042abcdde6399b78fe9088c80702c11123e6"
+      "sha256": "8bb7038e8e379f262689d03fc679cd40493fb43f591d269cb0804fa82f8a5f80"
     },
     {
       "path": "scripts/sir-david-ui.test.mjs",
@@ -190,5 +190,21 @@
     "Windows notifications default to off until saved choice",
     "Calendar cache content and freshness read atomically and checked inside reminder claim transaction",
     "Revoked sessions cannot delete Outlook connection/state or update failed-sync status"
-  ]
+  ],
+  "snoozeValidation": {
+    "checkedAt": "2026-10-14T13:37:52.881715+00:00",
+    "webTests": 117,
+    "plannerUiTests": 29,
+    "typecheck": "passed",
+    "build": "passed",
+    "visualSmoke": "light/dark, desktop/mobile, keyboard, synthetic network-disabled fixture",
+    "baselineRegression": {
+      "tests": 29,
+      "pass": 17,
+      "fail": 12
+    },
+    "hostDeployment": "pending owner integration",
+    "liveModelRequests": 0,
+    "liveTtsRequests": 0
+  }
 }
