@@ -6,6 +6,8 @@ Prioriteringen tar hänsyn till försenade och nära deadlines, sedan hög prior
 
 Nattpausen är från 22 till 08 i Stockholm från början och kan ändras. Samma start- och sluttimme stänger av pausen. Snooze gäller hela den aktuella deadlinen, även när den passerar ett nytt påminnelsesteg. Högst sex påminnelseförsök per lokal dag skyddar mot upprepade larm. Admin och skrivbordsprogrammet delar reservationer och kvitton, så samma påminnelse hanteras av en vy åt gången. Ett kvitto betyder att klienten tog emot påminnelsen; det bevisar inte att användaren såg eller hörde den.
 
+Vid en påminnelse kan du välja att bli påmind om 15 minuter, en timme eller 24 timmar. Valet sparas gemensamt för Admin och skrivbordsprogrammet. 24 timmar räknas från ditt klick; det betyder inte nästa morgon. Nattpaus och övriga påminnelseregler gäller fortfarande, så en uppskjuten påminnelse kommer först när den är aktuell och pausen är slut. För möten upphör larmfönstret fem minuter efter start. Knapparna spärras medan valet sparas. Om sparandet misslyckas finns påminnelsen kvar så att du kan försöka igen.
+
 Windowsversion 1.3 kan stanna i aktivitetsfältet när huvudfönstret stängs. Windowsnotiser är av tills du väljer dem under Påminnelser och sparar. Det sparade valet aktiverar programmets egen start vid Windowsinloggning. Aktivitetsfältets meny innehåller Öppna och Avsluta; Avsluta stoppar bevakningen. Datorn måste vara vaken, nätet tillgängligt och Admin inloggat. Windows fokusläge eller systeminställningar kan dölja notiser. Notiser innehåller en neutral text, utan projekttitlar eller mötesdetaljer. Uppläsning använder den sparade ElevenLabs-rösten när huvudfönstret är öppet och ljudet är på. Stopp-knappen fungerar som tidigare.
 
 ## Anslut Microsoft 365-jobbkalendern
