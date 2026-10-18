@@ -9,7 +9,7 @@
     "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path.",
     "Claude fetch receiver hotfix and cache index synchronized with reviewed host 27a1a5dc3312d2055a14a07e6591c5465b38f668. Export bundle preserves its own module-source location comment.",
     "Planner candidate adds owner-scoped projects, events, reminder claims and delegated Outlook integration on the existing companion export. Migration 010 is reserved with the host owner. Native 1.3 is a separate build; host deployment and Microsoft user consent are separate acceptance steps.",
-    "Work windows synchronized from host PR307 3be3457816ffa26a85d86f39d00c7031a52183c2 (unchanged on host main ae33bfecc6323d52480e8871b7d70617d373ac7e): planner client, CSS, route, API, work-window module, migration 012, private calendar schema and both tests are byte-identical to host. Export adaptations: src/site/sir-david-calendar-dispatch.js answers GET /api/calendar/events from private_calendar_events only (the host router also merges Proton ICS and routine-imported Outlook rows), and the work-window API test builds into a temporary folder instead of the host planning folder."
+    "Work windows synchronized from host PR307 3be3457816ffa26a85d86f39d00c7031a52183c2 (unchanged on host main ae33bfecc6323d52480e8871b7d70617d373ac7e): planner client, CSS, route, API, work-window module, migration 012, private calendar schema and the work-window UI test are byte-identical to host. Export adaptations: src/site/sir-david-calendar-dispatch.js answers GET /api/calendar/events from private_calendar_events only (the host router also merges Proton ICS and routine-imported Outlook rows), and the work-window API test builds into a temporary folder instead of the host planning folder."
   ],
   "files": [
     {
@@ -254,6 +254,9 @@
     "exportOnly": [
       "src/site/sir-david-calendar-dispatch.js",
       "scripts/sir-david-calendar-dispatch.test.mjs"
+    ],
+    "adapted": [
+      "scripts/sir-david-work-windows.test.mjs"
     ],
     "validation": {
       "webTests": 138,
