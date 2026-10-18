@@ -61,7 +61,9 @@ test('native hidden-window signal stops speech and prevents speaking a new chat 
 test('new replies speak automatically in bounded chunks, restored history stays silent',async t=>{
   const f=await audioFixture(t,{reply:'A'.repeat(1200)+'B'.repeat(80)});
   assert.equal(f.played.length,0);assert.equal(f.calls.filter(([url])=>url.endsWith('/speech')).length,0);
-  await f.submit();await settle();
+  await f.submit();
+  const deadline=Date.now()+2000;
+  while((f.played.length<2||!f.w.document.getElementById('stop-speech').hidden)&&Date.now()<deadline)await settle();
   const chunks=f.calls.filter(([url])=>url.endsWith('/speech')).map(([,init])=>JSON.parse(init.body).text);
   assert.deepEqual(chunks,['A'.repeat(1200),'B'.repeat(80)]);assert.equal(f.played.length,2);
   assert.equal(f.w.document.getElementById('stop-speech').hidden,true);
