@@ -1,3 +1,6 @@
 import { handleSirDavidRequest } from '../../../src/site/sir-david-api';
-export const onRequest: PagesFunction<Parameters<typeof handleSirDavidRequest>[1]> = ({ request, env, params }) =>
-  handleSirDavidRequest(request, env, ((params.route as string[]) ?? []).join('/'));
+import { dispatchCalendar } from '../../../src/site/sir-david-calendar-dispatch.js';
+export const onRequest: PagesFunction<Parameters<typeof handleSirDavidRequest>[1]> = ctx =>
+  handleSirDavidRequest(ctx.request,ctx.env,((ctx.params.route as string[])??[]).join('/'),async request=>{
+    return dispatchCalendar(ctx,request);
+  });
