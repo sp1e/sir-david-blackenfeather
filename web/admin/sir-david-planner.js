@@ -7,7 +7,7 @@
   preference?.addEventListener('change',applyTheme);applyTheme();
   window.SirDavidPlanner={create({api,post,authorized,speechEnabled,canSpeak,speak}){
     if(!$('planner-panel'))return {init:async()=>{},clear:()=>{}};
-    let snapshot=null, outlook=null, saving=false, snoozing=false, polling=false, generation=0, nativeVisible=null, lastSync=0, lastAnnounced=null;
+    let snapshot=null, outlook=null, saving=false, snoozing=false, polling=false, generation=0, announcementEpoch=0, refreshSequence=0, nativeVisible=null, lastSync=0, lastAnnounced=null;
     const pendingNative=new Map(), native=window.chrome?.webview;
     const editVersions=new Map();
     for(const form of ['project-form','event-form','planner-settings'])$(form).addEventListener('input',()=>{if(snapshot&&!editVersions.has(form))editVersions.set(form,snapshot.version);});
@@ -27,12 +27,13 @@
     const snoozeChoices=[[15,'Påminn om 15 minuter','15 minuter'],[60,'Påminn om en timme','en timme'],[1440,'Påminn om 24 timmar','24 timmar']];
     async function snooze(reminder,minutes){
       if(snoozing||saving||!authorized()||!snapshot||!stillDue(reminder))return;
-      const own=generation;snoozing=true;render();
+      const own=generation;snoozing=true;announcementEpoch++;render();
       try{
         await post('planner/snooze',{key:reminder.key,minutes});
         if(own!==generation||!authorized())return;
         const sameSeries=r=>r.key===reminder.key||Boolean(reminder.seriesKey&&r.seriesKey===reminder.seriesKey);
         if(lastAnnounced&&sameSeries(lastAnnounced))lastAnnounced=null;
+        for(const [claimId,pending] of pendingNative)if(pending.key===reminder.key)pendingNative.delete(claimId);
         snapshot.reminders=snapshot.reminders.filter(r=>!sameSeries(r));render();
         status('Påminnelsen är uppskjuten i '+snoozeChoices.find(([value])=>value===minutes)[2]+'. Valet delas med din andra vy.');
         await refresh();
@@ -50,7 +51,8 @@
       $('planner-alerts').replaceChildren();for(const r of snapshot.reminders)$('planner-alerts').append(reminderRow(r));if(!snapshot.reminders.length&&lastAnnounced)$('planner-alerts').append(reminderRow(lastAnnounced));
       nativeSend({type:'sir-david-preferences',notifications:doc.settings.reminders&&doc.settings.desktopNotifications});renderOutlook();
     }
-    async function refresh(){const own=generation;const data=await (await api('planner')).json();if(own!==generation||!authorized())return;snapshot=data.planner;render();}
+    // Older observations cannot replace the refresh that follows a confirmed snooze.
+    async function refresh(){const own=generation,sequence=++refreshSequence;const data=await (await api('planner')).json();if(own!==generation||sequence!==refreshSequence||!authorized())return;snapshot=data.planner;render();}
     $('reload-planner').addEventListener('click',()=>refresh().then(()=>{for(const form of editVersions.keys())editVersions.set(form,snapshot.version);status('Planeringen är inläst. Kontrollera dina osparade fält innan du sparar.');}).catch(error=>status(error.message)));
     $('project-reset').addEventListener('click',()=>{$('project-form').reset();$('project-id').value='';editVersions.delete('project-form');});$('event-reset').addEventListener('click',()=>{$('event-form').reset();$('event-id').value='';editVersions.delete('event-form');});
     $('project-form').addEventListener('submit',async event=>{event.preventDefault();if(!snapshot||!authorized())return;try{const d=changed(),id=$('project-id').value||crypto.randomUUID(),p={id,title:$('project-title').value,nextAction:$('project-next').value,deadline:inputDate($('project-deadline').value),priority:$('project-priority').value,status:$('project-state').value,notes:$('project-notes').value};d.projects=d.projects.filter(row=>row.id!==id);d.projects.push(p);if(await save(d,'project-form')){$('project-form').reset();$('project-id').value='';}}catch(error){status(error.message);}});
@@ -61,7 +63,7 @@
     $('outlook-sync').addEventListener('click',()=>syncCalendar().then(()=>status('Kalenderns senaste tillgängliga schema är inläst.')).catch(error=>status(error.message)));
     $('outlook-disconnect').addEventListener('click',async()=>{const own=generation;try{await post('outlook/disconnect',{});const data=await(await api('outlook/status')).json();if(own!==generation||!authorized())return;outlook=data.outlook;await refresh();if(own===generation&&authorized())status('Outlook är frånkopplat. Den sparade kalenderkopian är borttagen.');}catch(error){if(own===generation&&authorized())status(error.message);}});
     async function acknowledge(key,claimId){if(!authorized())return;await post('planner/ack',{key,claimId});}
-    async function tick(){if(polling||saving||snoozing||!authorized()||!snapshot)return;polling=true;const own=generation;try{
+    async function tick(){if(polling||saving||snoozing||!authorized()||!snapshot)return;polling=true;const own=generation,ownAnnouncement=announcementEpoch;try{
       if(outlook?.connected&&Date.now()-lastSync>10*60000){lastSync=Date.now();await syncCalendar().catch(()=>{if(authorized())status('Kalendern kunde inte uppdateras. Kontrollera Outlook-anslutningen.');});}
       await refresh();if(own!==generation||!authorized()||!snapshot||snoozing)return;
       const visible=isVisible(), notify=Boolean(native)&&snapshot.document.settings.desktopNotifications;
@@ -70,12 +72,15 @@
       const wantsSpeech=visible&&snapshot.document.settings.speakWhenOpen&&speechEnabled();
       if(wantsSpeech&&!canSpeak())return;
       const r=snapshot.reminders[0];if(!r)return;
-      const data=await(await post('planner/claim',{key:r.key,version:snapshot.version})).json();if(own!==generation||!authorized())return;
+      // Snooze invalidates a claim even after its saving flag has cleared.
+      const claimEpoch=announcementEpoch;
+      const data=await(await post('planner/claim',{key:r.key,version:snapshot.version})).json();if(own!==generation||claimEpoch!==announcementEpoch||snoozing||!authorized())return;
       lastAnnounced=data.reminder;render();
       if(notify){pendingNative.set(data.claimId,{key:r.key,generation:own});nativeSend({type:'sir-david-reminder',claimId:data.claimId,title:'Sir David Blackenfeather',body:'Din planering behöver uppmärksamhet. Öppna Sir David för nästa steg.'});}
       if(wantsSpeech)await speak(data.reminder.message);
+      if(own!==generation||claimEpoch!==announcementEpoch||!authorized())return;
       if(!notify)await acknowledge(r.key,data.claimId);
-    }catch(error){if(authorized()&&own===generation&&!/hanteras redan|dagens gräns|inte aktuell|ändrats/.test(error.message))status(error.message);}finally{polling=false;}}
+    }catch(error){if(authorized()&&own===generation&&ownAnnouncement===announcementEpoch&&!/hanteras redan|dagens gräns|inte aktuell|ändrats/.test(error.message))status(error.message);}finally{polling=false;}}
     native?.addEventListener('message',event=>{const data=event.data;if(!data||typeof data!=='object')return;if(data.type==='sir-david-native-tick'&&typeof data.visible==='boolean'){nativeVisible=data.visible;tick();}else if(data.type==='sir-david-reminder-result'&&typeof data.claimId==='string'){const pending=pendingNative.get(data.claimId);pendingNative.delete(data.claimId);if(data.accepted===true&&pending?.generation===generation&&authorized())acknowledge(pending.key,data.claimId).catch(()=>{});}});
     nativeSend({type:'sir-david-ready'});
     const timer=setInterval(()=>{if(!native&&isVisible())tick();},60000);

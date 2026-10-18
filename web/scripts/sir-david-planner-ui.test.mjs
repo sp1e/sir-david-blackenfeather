@@ -7,18 +7,19 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,15));
 async function fixture(t,{native=false,visible=true,sound=true,due=true,theme='system',systemDark=false}={}) {
   const dom=new JSDOM(html,{url:'https://sp1e.se/admin/?panel=sir-david',runScripts:'outside-only'});t.after(()=>dom.window.close());const w=dom.window,$=id=>w.document.getElementById(id);
   Object.defineProperty(w.document,'visibilityState',{get:()=>visible?'visible':'hidden'});w.structuredClone=structuredClone;w.matchMedia=()=>({matches:systemDark,addEventListener(){}});w.localStorage.setItem('sir-david-theme',theme);
-  let authorized=true,timer,claim=0,clockBusy=false,pendingGet=null,failSave=false,snoozeError=null,snoozeGate=null;const calls=[],spoken=[],messages=[];
+  let authorized=true,timer,claim=0,clockBusy=false,pendingGet=null,failSave=false,snoozeError=null,snoozeGate=null,claimGate=null,staleGetGate=null;const calls=[],spoken=[],messages=[];
   const project={id:'11111111-1111-4111-8111-111111111111',title:'<img src=x onerror=alert(1)>',notes:'',nextAction:'Skriv utkast',deadline:new Date(Date.now()+3600000).toISOString(),priority:'high',status:'active'};
   const reminder={key:'a'.repeat(64),seriesKey:'b'.repeat(64),title:project.title,message:'Deadline inom två timmar. Skriv utkast.',at:project.deadline,kind:'project',itemId:project.id};
   let snapshot={version:0,document:{projects:[project],events:[],settings:{reminders:true,desktopNotifications:true,speakWhenOpen:true,timezone:'Europe/Stockholm',quietStart:0,quietEnd:0}},focus:[project.id],outlookEvents:[],reminders:due?[reminder]:[],serverTime:new Date().toISOString(),quiet:false};
   let nativeMessages;if(native){nativeMessages=new w.EventTarget();nativeMessages.postMessage=data=>messages.push(data);Object.defineProperty(w,'chrome',{value:{webview:nativeMessages}});}
   w.setInterval=fn=>{timer=fn;return 1;};w.clearInterval=()=>{};
-  async function api(route,options={}){calls.push([route,options]);if(route==='planner'){if(options.method==='PUT'){if(failSave)throw Error('Planeringen ändrades i en annan vy.');const data=JSON.parse(options.body);assert.equal(data.version,snapshot.version);snapshot={...snapshot,version:snapshot.version+1,document:data.document};}if(pendingGet)return new Promise(resolve=>{pendingGet=()=>resolve({json:async()=>({planner:structuredClone(snapshot)})});});return{json:async()=>({planner:structuredClone(snapshot)})};}if(route==='outlook/status')return{json:async()=>({outlook:{configured:false,connected:false,lastSync:null}})};throw Error('Unexpected route '+route);}
-  async function post(route,data){calls.push([route,data]);if(route==='planner/claim'){claim++;const claimed=snapshot.reminders.find(r=>r.key===data.key)??reminder;return{json:async()=>({claimId:'11111111-1111-4111-8111-111111111111',reminder:claimed})};}if(route==='planner/ack'){snapshot.reminders=[];return{json:async()=>({acknowledged:true})};}if(route==='planner/snooze'){if(snoozeGate)await snoozeGate.promise;if(snoozeError)throw snoozeError;snapshot.reminders=[];return{json:async()=>({snoozed:true})};}throw Error('Unexpected route '+route);}
+  async function api(route,options={}){calls.push([route,options]);if(route==='planner'){if(options.method==='PUT'){if(failSave)throw Error('Planeringen ändrades i en annan vy.');const data=JSON.parse(options.body);assert.equal(data.version,snapshot.version);snapshot={...snapshot,version:snapshot.version+1,document:data.document};}if(staleGetGate){const gate=staleGetGate,captured=structuredClone(snapshot);staleGetGate=null;return{json:async()=>{await gate.promise;return{planner:captured};}};}if(pendingGet)return new Promise(resolve=>{pendingGet=()=>resolve({json:async()=>({planner:structuredClone(snapshot)})});});return{json:async()=>({planner:structuredClone(snapshot)})};}if(route==='outlook/status')return{json:async()=>({outlook:{configured:false,connected:false,lastSync:null}})};throw Error('Unexpected route '+route);}
+  async function post(route,data){calls.push([route,data]);if(route==='planner/claim'){claim++;const claimed=structuredClone(snapshot.reminders.find(r=>r.key===data.key)??reminder),gate=claimGate;return{json:async()=>{if(gate)await gate.promise;return{claimId:'11111111-1111-4111-8111-111111111111',reminder:claimed};}};}if(route==='planner/ack'){snapshot.reminders=[];return{json:async()=>({acknowledged:true})};}if(route==='planner/snooze'){if(snoozeGate)await snoozeGate.promise;if(snoozeError)throw snoozeError;snapshot.reminders=[];return{json:async()=>({snoozed:true})};}throw Error('Unexpected route '+route);}
   $('sir-david-panel').hidden=false;w.eval(script);const planner=w.SirDavidPlanner.create({api,post,authorized:()=>authorized,speechEnabled:()=>sound,canSpeak:()=>!clockBusy,speak:async value=>{spoken.push(value);}});
   if(native){const event=new w.MessageEvent('message',{data:{type:'sir-david-native-tick',visible}});nativeMessages.dispatchEvent(event);}
   await planner.init();await settle();
-  return{w,$,planner,calls,spoken,messages,claim:()=>claim,async tick(){timer();await settle();},async nativeTick(value){nativeMessages.dispatchEvent(new w.MessageEvent('message',{data:{type:'sir-david-native-tick',visible:value}}));await settle();},ack(accepted=true){nativeMessages.dispatchEvent(new w.MessageEvent('message',{data:{type:'sir-david-reminder-result',claimId:'11111111-1111-4111-8111-111111111111',accepted}}));},revoke(){authorized=false;planner.clear();},busy(value){clockBusy=value;},delayGet(){pendingGet=true;},releaseGet(){const release=pendingGet;pendingGet=null;release();},failSave(){failSave=true;},failSnooze(){snoozeError=Error('Påminnelsen kunde inte skjutas upp.');},delaySnooze(){let release;const promise=new Promise(resolve=>{release=resolve;});snoozeGate={promise,release};},releaseSnooze(){snoozeGate.release();snoozeGate=null;},snapshot:()=>snapshot};
+  let releaseStaleGet;
+  return{w,$,planner,calls,spoken,messages,claim:()=>claim,async tick(){timer();await settle();},async nativeTick(value){nativeMessages.dispatchEvent(new w.MessageEvent('message',{data:{type:'sir-david-native-tick',visible:value}}));await settle();},ack(accepted=true){nativeMessages.dispatchEvent(new w.MessageEvent('message',{data:{type:'sir-david-reminder-result',claimId:'11111111-1111-4111-8111-111111111111',accepted}}));},revoke(){authorized=false;planner.clear();},busy(value){clockBusy=value;},delayGet(){pendingGet=true;},releaseGet(){const release=pendingGet;pendingGet=null;release();},delayClaim(){let release,reject;const promise=new Promise((resolve,fail)=>{release=resolve;reject=fail;});claimGate={promise,release,reject};},releaseClaim(){claimGate.release();claimGate=null;},rejectClaim(error){claimGate.reject(error);claimGate=null;},delayStaleGet(){staleGetGate={promise:new Promise(resolve=>{releaseStaleGet=resolve;})};},releaseStaleGet(){releaseStaleGet();},failSave(){failSave=true;},failSnooze(){snoozeError=Error('Påminnelsen kunde inte skjutas upp.');},delaySnooze(){let release;const promise=new Promise(resolve=>{release=resolve;});snoozeGate={promise,release};},releaseSnooze(){snoozeGate.release();snoozeGate=null;},snapshot:()=>snapshot};
 }
 test('visible web view announces once and uses text nodes for private project data',async t=>{const f=await fixture(t);assert.equal(f.spoken.length,1);assert.equal(f.claim(),1);assert.equal(f.$('planner-focus').querySelectorAll('img').length,0);assert.match(f.$('planner-focus').textContent,/<img src/);await f.tick();assert.equal(f.claim(),1);});
 test('hidden native view sends a generic Windows notice, stays silent and acknowledges native acceptance only',async t=>{const f=await fixture(t,{native:true,visible:false});assert.equal(f.spoken.length,0);const notice=f.messages.find(m=>m.type==='sir-david-reminder');assert.ok(notice);assert.ok(!notice.body.includes('utkast'));assert.equal(f.calls.some(([r])=>r==='planner/ack'),false);f.ack();await settle();assert.equal(f.calls.filter(([r])=>r==='planner/ack').length,1);});
@@ -56,6 +57,39 @@ test('a poll already in flight cannot announce a reminder while snooze is saving
   const f=await fixture(t);f.delayGet();const poll=f.tick();await settle();f.delaySnooze();snoozeButton(f,'Påminn om en timme').click();
   const p=f.snapshot().document.projects[0];f.snapshot().reminders=[{key:'a'.repeat(64),seriesKey:'b'.repeat(64),message:'Deadline inom två timmar.',kind:'project',itemId:p.id,at:p.deadline}];
   f.releaseGet();await poll;assert.equal(f.claim(),1);assert.equal(f.spoken.length,1);f.releaseSnooze();await settle();assert.equal(alertText(f),'');
+});
+
+for(const native of [false,true])test(`${native?'native':'web'} late claim after completed snooze cannot restore or deliver the reminder`,async t=>{
+  const f=await fixture(t,{native,due:false}),project=f.snapshot().document.projects[0];
+  f.snapshot().reminders=[{key:'a'.repeat(64),seriesKey:'b'.repeat(64),message:'Deadline inom två timmar.',kind:'project',itemId:project.id,at:project.deadline}];
+  f.delayClaim();if(native)await f.nativeTick(true);else await f.tick();assert.equal(f.claim(),1);
+  snoozeButton(f,'Påminn om en timme').click();await settle();assert.equal(alertText(f),'');
+  assert.equal(f.calls.filter(([route])=>route==='planner/snooze').length,1);
+  f.releaseClaim();await settle();
+  assert.equal(alertText(f),'');assert.equal(f.spoken.length,0);
+  assert.equal(f.messages.filter(message=>message.type==='sir-david-reminder').length,0);
+  assert.equal(f.calls.filter(([route])=>route==='planner/ack').length,0);
+});
+
+test('late stale planner observation after completed snooze cannot restore the reminder',async t=>{
+  const f=await fixture(t,{due:false}),project=f.snapshot().document.projects[0];
+  f.snapshot().reminders=[{key:'a'.repeat(64),seriesKey:'b'.repeat(64),message:'Deadline inom två timmar.',kind:'project',itemId:project.id,at:project.deadline}];
+  f.busy(true);await f.tick();assert.match(alertText(f),/Deadline inom två timmar/);
+  f.delayStaleGet();await f.tick();
+  snoozeButton(f,'Påminn om 15 minuter').click();await settle();assert.equal(alertText(f),'');assert.equal(f.snapshot().reminders.length,0);
+  f.releaseStaleGet();await settle();
+  assert.equal(alertText(f),'');assert.equal(f.claim(),0);assert.equal(f.spoken.length,0);
+});
+
+test('late failed claim after completed snooze cannot replace its success status',async t=>{
+  const f=await fixture(t,{due:false}),project=f.snapshot().document.projects[0];
+  f.snapshot().reminders=[{key:'a'.repeat(64),seriesKey:'b'.repeat(64),message:'Deadline inom två timmar.',kind:'project',itemId:project.id,at:project.deadline}];
+  f.delayClaim();await f.tick();assert.equal(f.claim(),1);
+  snoozeButton(f,'Påminn om en timme').click();await settle();
+  const success=f.$('planner-status').textContent;assert.match(success,/Påminnelsen är uppskjuten/);
+  f.rejectClaim(Error('Det gamla anropets nätverksfel.'));await settle();
+  assert.equal(f.$('planner-status').textContent,success);assert.equal(alertText(f),'');
+  assert.equal(f.spoken.length,0);assert.equal(f.calls.filter(([route])=>route==='planner/ack').length,0);
 });
 
 test('a failed snooze keeps the reminder and re-enables every choice',async t=>{

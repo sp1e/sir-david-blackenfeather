@@ -41,7 +41,7 @@
     },
     {
       "path": "admin/sir-david-planner.js",
-      "sha256": "3a972e4b07f8e69badda8d1a961b85db7906e74f3a1f44164a51a9c03ec5e90b"
+      "sha256": "50180a4bf6a0ef9039ecae5560acde9c0d0cfae50b680372e0506eb77cc90dbe"
     },
     {
       "path": "admin/sir-david.css",
@@ -89,11 +89,11 @@
     },
     {
       "path": "scripts/sir-david-planner-ui.test.mjs",
-      "sha256": "8bb7038e8e379f262689d03fc679cd40493fb43f591d269cb0804fa82f8a5f80"
+      "sha256": "a91c2a6b4616e3f7544ed96290670bec66e667b07d54e00e170f83d3f96a860e"
     },
     {
       "path": "scripts/sir-david-ui.test.mjs",
-      "sha256": "4de3380ff434549f93710b1342cb22c1f47a77481eba1318bc38e4104f0ee818"
+      "sha256": "77e9dedda0c13f437de9837b33017a5f53f6f2d56ed1a62c185813b68721c40f"
     },
     {
       "path": "scripts/sir-david.test.mjs",
@@ -192,9 +192,9 @@
     "Revoked sessions cannot delete Outlook connection/state or update failed-sync status"
   ],
   "snoozeValidation": {
-    "checkedAt": "2026-10-14T13:37:52.881715+00:00",
-    "webTests": 117,
-    "plannerUiTests": 29,
+    "checkedAt": "2026-10-18T09:05:56.976457+00:00",
+    "webTests": 121,
+    "plannerUiTests": 33,
     "typecheck": "passed",
     "build": "passed",
     "visualSmoke": "light/dark, desktop/mobile, keyboard, synthetic network-disabled fixture",
@@ -203,8 +203,14 @@
       "pass": 17,
       "fail": 12
     },
-    "hostDeployment": "pending owner integration",
+    "hostDeployment": "existing host integration confirmed by owner; current production verification pending",
     "liveModelRequests": 0,
-    "liveTtsRequests": 0
+    "liveTtsRequests": 0,
+    "reviewedRaceFixSource": "sp1e/sp1e.se@371e64e41b832f089408dcbcd68f328dc1d032f8",
+    "reviewFixes": [
+      "Invalidate claim completions, native receipts and errors after snooze starts",
+      "Only the newest refresh may replace the snapshot",
+      "Await observable audio completion in the existing chunked playback test"
+    ]
   }
 }
