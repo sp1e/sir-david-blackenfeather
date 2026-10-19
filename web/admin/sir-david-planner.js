@@ -9,6 +9,67 @@
     if(!$('planner-panel'))return {init:async()=>{},clear:()=>{}};
     let snapshot=null, outlook=null, saving=false, snoozing=false, polling=false, generation=0, announcementEpoch=0, refreshSequence=0, nativeVisible=null, lastSync=0, lastAnnounced=null;
     const pendingNative=new Map(), native=window.chrome?.webview;
+    let workBusy=false,workBasis=null,workSequence=0,workSettingsLoaded=false;
+    const workSection=document.createElement('details');workSection.id='work-window-panel';
+    workSection.innerHTML=`<summary>Hitta ett arbetsfönster</summary>
+      <p class="subtle">Ett nästa steg, en tid att arbeta. Förslag utgår från din läsbara agenda och bokas först när du väljer att spara.</p>
+      <form id="work-window-form" class="planner-form">
+        <label for="work-project">Projektets nästa steg</label><select id="work-project" required></select>
+        <label for="work-date">Dag · Europe/Stockholm</label><input id="work-date" type="date" required>
+        <label for="work-duration">Minuter att arbeta</label><input id="work-duration" type="number" min="5" max="240" value="45" required>
+        <div class="work-window-hours"><label for="work-from">Tidigast<input id="work-from" type="time" value="09:00" required></label>
+        <label for="work-to">Senast<input id="work-to" type="time" value="17:00" required></label></div>
+        <label for="work-buffer">Buffert kring andra händelser · minuter</label><input id="work-buffer" type="number" min="0" max="60" value="10" required>
+        <button class="pill" type="submit">Föreslå arbetstid</button>
+      </form><p id="work-window-status" class="subtle" role="status" aria-live="polite"></p>
+      <ul id="work-window-results" class="planner-list"></ul>
+      <div id="work-window-choice" class="planner-form" hidden>
+        <label for="work-choice-start">Vald start · du kan ändra tiden</label><input id="work-choice-start" type="time">
+        <label for="work-choice-end">Valt slut</label><input id="work-choice-end" type="time">
+        <div class="options"><button id="work-window-accept" type="button" class="pill">Spara arbetsblock</button><button id="work-window-reject" type="button" class="pill">Föreslå inte den tiden igen</button></div>
+      </div><a class="pill" href="/kalender/" target="_blank" rel="noopener">Öppna privat kalender ↗</a>`;
+    $('planner-status').before(workSection);
+    $('work-date').value=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Stockholm',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+    function workStatus(message){$('work-window-status').textContent=message;}
+    function workControls(){workSection.querySelectorAll('button,input,select').forEach(el=>{el.disabled=workBusy||saving;});}
+    function clearWorkResults(){workBasis=null;workSequence++;$('work-window-results').replaceChildren();$('work-window-choice').hidden=true;}
+    function workInput(){return {projectId:$('work-project').value,date:$('work-date').value,settings:{durationMinutes:Number($('work-duration').value),windowStart:$('work-from').value,windowEnd:$('work-to').value,bufferMinutes:Number($('work-buffer').value)}};}
+    function syncWorkProjects(){
+      const previous=$('work-project').value,select=$('work-project');select.replaceChildren();
+      for(const project of snapshot.document.projects.filter(p=>['active','planned'].includes(p.status)&&p.nextAction.trim())){
+        const option=document.createElement('option');option.value=project.id;option.textContent=project.title+' · '+project.nextAction;select.append(option);
+      }
+      if([...select.options].some(option=>option.value===previous))select.value=previous;
+    }
+    $('work-window-form').addEventListener('input',()=>{clearWorkResults();workSettingsLoaded=true;});
+    workSection.addEventListener('toggle',async()=>{
+      if(!workSection.open||workSettingsLoaded||!authorized())return;workSettingsLoaded=true;
+      const own=generation,sequence=workSequence;
+      try{const data=await(await api('planner/work-windows')).json();if(own!==generation||sequence!==workSequence||!authorized())return;
+        const s=data.settings;for(const [id,value] of [['work-duration',s.durationMinutes],['work-from',s.windowStart],['work-to',s.windowEnd],['work-buffer',s.bufferMinutes]])$(id).value=value;
+      }catch(error){if(own===generation&&authorized())workStatus(error.message);}
+    });
+    $('work-window-form').addEventListener('submit',async event=>{
+      event.preventDefault();if(workBusy||saving||!authorized())return;
+      clearWorkResults();const own=generation,sequence=workSequence,input=workInput();workBusy=true;workControls();workStatus('Läser agendan…');
+      try{const data=await(await post('planner/work-windows',input)).json();if(own!==generation||sequence!==workSequence||!authorized())return;
+        workStatus(data.message);workBasis={...input,basis:data.basis};
+        if(data.existing){const p=document.createElement('li');p.textContent=data.existing.deleted?'Det accepterade blocket har tagits bort i kalendern. Det skapas inte igen automatiskt.':'Accepterat block · '+data.existing.event.event_date+' · '+data.existing.event.start_time+'–'+data.existing.event.end_time;$('work-window-results').append(p);return;}
+        for(const slot of data.slots){const li=document.createElement('li');li.append(action(slot.start+'–'+slot.end+' · Välj',()=>{$('work-choice-start').value=slot.start;$('work-choice-end').value=slot.end;$('work-window-choice').hidden=false;$('work-choice-start').focus();}));$('work-window-results').append(li);}
+        if(!data.slots.length)workStatus(data.message+' Ingen tid ryms. Välj en annan dag eller ett större arbetsfönster.');
+      }catch(error){if(own===generation&&authorized())workStatus(error.message);}
+      finally{if(own===generation){workBusy=false;workControls();}}
+    });
+    async function decideWork(decision){
+      if(!workBasis||workBusy||saving||!authorized())return;
+      const own=generation,sequence=workSequence;workBusy=true;workControls();
+      try{const data=await(await post('planner/work-windows/decision',{...workBasis,start:$('work-choice-start').value,end:$('work-choice-end').value,decision})).json();if(own!==generation||sequence!==workSequence||!authorized())return;
+        clearWorkResults();workStatus(data.message);workBusy=false;workControls();$('work-window-form').querySelector('button').focus();
+      }catch(error){if(own===generation&&authorized())workStatus(error.message);}
+      finally{if(own===generation){workBusy=false;workControls();}}
+    }
+    $('work-window-accept').addEventListener('click',()=>decideWork('accept'));
+    $('work-window-reject').addEventListener('click',()=>decideWork('reject'));
     const editVersions=new Map();
     for(const form of ['project-form','event-form','planner-settings'])$(form).addEventListener('input',()=>{if(snapshot&&!editVersions.has(form))editVersions.set(form,snapshot.version);});
     const status=message=>{$('planner-status').textContent=message;};
@@ -42,6 +103,7 @@
     }
     function reminderRow(reminder){const p=document.createElement('p');p.textContent=reminder.message;for(const [minutes,label] of snoozeChoices){const button=action(label,()=>snooze(reminder,minutes));button.disabled=snoozing||saving;p.append(' ',button);}return p;}
     function render(){if(!snapshot||!authorized())return;$('planner-panel').hidden=false;const doc=snapshot.document;if(lastAnnounced&&!stillDue(lastAnnounced))lastAnnounced=null;
+      syncWorkProjects();workControls();
       $('planner-focus').replaceChildren();for(const id of snapshot.focus){const p=doc.projects.find(p=>p.id===id);if(!p)continue;const li=document.createElement('li');const name=document.createElement('strong');name.textContent=p.title;const info=document.createElement('p');info.textContent=(p.deadline?'Deadline '+date(p.deadline)+'. ':'')+(p.nextAction||'Välj ett nästa steg.');li.append(name,info,action('Arbeta med detta',()=>{$('prompt').value='Hjälp mig ta nästa steg i projektet '+p.title+'. '+p.nextAction;$('prompt').focus();}));$('planner-focus').append(li);}
       if(!snapshot.focus.length){const p=document.createElement('p');p.textContent='Lägg till ditt första projekt och ett nästa steg.';$('planner-focus').append(p);}
       $('planner-projects').replaceChildren();for(const p of doc.projects){const li=document.createElement('li'),label=document.createElement('p');label.textContent=p.title+' · '+({planned:'Planerat',active:'Pågår',paused:'Pausat',done:'Klart'}[p.status])+(p.deadline?' · '+date(p.deadline):'');li.append(label,action('Redigera',()=>{editVersions.set('project-form',snapshot.version);for(const [field,value] of Object.entries({id:p.id,title:p.title,next:p.nextAction,deadline:localInput(p.deadline),priority:p.priority,state:p.status,notes:p.notes}))$('project-'+field).value=value;$('project-title').focus();}),action(p.status==='done'?'Aktivera':'Markera klart',async()=>{const d=changed();d.projects.find(row=>row.id===p.id).status=p.status==='done'?'active':'done';await save(d);}),action('Ta bort',async()=>{const d=changed();d.projects=d.projects.filter(row=>row.id!==p.id);await save(d);}));$('planner-projects').append(li);}
@@ -85,6 +147,6 @@
     nativeSend({type:'sir-david-ready'});
     const timer=setInterval(()=>{if(!native&&isVisible())tick();},60000);
     window.addEventListener('pagehide',()=>{clearInterval(timer);generation++;pendingNative.clear();});
-    return {async init(){const own=generation;await refresh();const data=await(await api('outlook/status')).json();if(own!==generation||!authorized())return;outlook=data.outlook;renderOutlook();const url=new URL(window.location.href);if(url.searchParams.has('calendar')){status(url.searchParams.get('calendar')==='connected'?'Outlook är anslutet. Hämta ditt schema.':'Outlook-anslutningen avbröts.');url.searchParams.delete('calendar');window.history.replaceState(null,'',url);}await tick();},clear(){generation++;snapshot=null;outlook=null;lastAnnounced=null;snoozing=false;pendingNative.clear();$('planner-panel').hidden=true;for(const id of ['planner-focus','planner-projects','planner-events','planner-alerts'])$(id).replaceChildren();$('project-form').reset();$('event-form').reset();$('planner-status').textContent='';}};
+    return {async init(){const own=generation;await refresh();const data=await(await api('outlook/status')).json();if(own!==generation||!authorized())return;outlook=data.outlook;renderOutlook();const url=new URL(window.location.href);if(url.searchParams.has('calendar')){status(url.searchParams.get('calendar')==='connected'?'Outlook är anslutet. Hämta ditt schema.':'Outlook-anslutningen avbröts.');url.searchParams.delete('calendar');window.history.replaceState(null,'',url);}await tick();},clear(){generation++;snapshot=null;outlook=null;lastAnnounced=null;snoozing=false;workBusy=false;workSettingsLoaded=false;clearWorkResults();workStatus('');$('work-project').replaceChildren();pendingNative.clear();$('planner-panel').hidden=true;for(const id of ['planner-focus','planner-projects','planner-events','planner-alerts'])$(id).replaceChildren();$('project-form').reset();$('event-form').reset();$('planner-status').textContent='';}};
   }};
 })();

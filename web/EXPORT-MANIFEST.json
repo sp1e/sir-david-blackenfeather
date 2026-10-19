@@ -8,7 +8,8 @@
     "Export build regenerates the adapter bundle from ../local-adapter; the source-location comment differs from the host bundle, while canonical source and runtime code are preserved.",
     "Workspace tools and current Admin/adapter source synchronized from reviewed host commit 85e466e309ba3dcbbb09342afe21b73b25cdf663. Root-scoped history and rollback on backup/journal failure are included. Local configuration, history and user files remain excluded. The export build retains its own module-source path.",
     "Claude fetch receiver hotfix and cache index synchronized with reviewed host 27a1a5dc3312d2055a14a07e6591c5465b38f668. Export bundle preserves its own module-source location comment.",
-    "Planner candidate adds owner-scoped projects, events, reminder claims and delegated Outlook integration on the existing companion export. Migration 010 is reserved with the host owner. Native 1.3 is a separate build; host deployment and Microsoft user consent are separate acceptance steps."
+    "Planner candidate adds owner-scoped projects, events, reminder claims and delegated Outlook integration on the existing companion export. Migration 010 is reserved with the host owner. Native 1.3 is a separate build; host deployment and Microsoft user consent are separate acceptance steps.",
+    "Work windows synchronized from host PR307 3be3457816ffa26a85d86f39d00c7031a52183c2 (unchanged on host main ae33bfecc6323d52480e8871b7d70617d373ac7e): planner client, CSS, route, API, work-window module, migration 012, private calendar schema and the work-window UI test are byte-identical to host. Export adaptations: src/site/sir-david-calendar-dispatch.js answers GET /api/calendar/events from private_calendar_events only (the host router also merges Proton ICS and routine-imported Outlook rows), and the work-window API test builds into a temporary folder instead of the host planning folder."
   ],
   "files": [
     {
@@ -41,11 +42,11 @@
     },
     {
       "path": "admin/sir-david-planner.js",
-      "sha256": "50180a4bf6a0ef9039ecae5560acde9c0d0cfae50b680372e0506eb77cc90dbe"
+      "sha256": "02fc1739cb768f40e324fd85c0f1d7facf386ba5fb270a6c74001c1b9221ce9a"
     },
     {
       "path": "admin/sir-david.css",
-      "sha256": "546d33a1c11d34b5bba2165b27fc4e7148f68f778cb2367430ece05625d337dc"
+      "sha256": "43306681df8eb6ac00762e54d9d9a5fbb575b8330d37e0ce5b0df03a9923a347"
     },
     {
       "path": "admin/sir-david.js",
@@ -61,7 +62,11 @@
     },
     {
       "path": "functions/api/sir-david/[[route]].ts",
-      "sha256": "de98b97d5ecbdcd8e71c47204868220b08802cc9756b6d34c44b9172e019e561"
+      "sha256": "c87b8564121ad36739031c2521e3517829989826fab383cf920897cee2dc26fc"
+    },
+    {
+      "path": "kalender-migration-001-private-calendar.sql",
+      "sha256": "8f0f9fbc6f46b52399646c0ebfeadf5c8955e903332626caca35a5366dd7547f"
     },
     {
       "path": "package-lock.json",
@@ -69,7 +74,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "536e4e425c7bbb67ad9ae21cd67db4645321641349ad7a042442a603cea8959b"
+      "sha256": "375acbb5d4c79991538940b791a0722aee9fdfd5b154a5ae63e5905ed43b1f56"
     },
     {
       "path": "portal/portal.js",
@@ -84,6 +89,10 @@
       "sha256": "8d1fbb0296f4b566a57cb521a2501c15efdc1f281855c9cbf144994f90b57425"
     },
     {
+      "path": "scripts/sir-david-calendar-dispatch.test.mjs",
+      "sha256": "5b567900af31fef1ed1201bdd9679cfd545e6ffb48d6a73ed6cbc34a8d415cdd"
+    },
+    {
       "path": "scripts/sir-david-claude-ui.test.mjs",
       "sha256": "adc129b8a74df64526a6715c4b6c2e1fe9a5c598ae50808c0e246124dcaf5bc2"
     },
@@ -94,6 +103,14 @@
     {
       "path": "scripts/sir-david-ui.test.mjs",
       "sha256": "77e9dedda0c13f437de9837b33017a5f53f6f2d56ed1a62c185813b68721c40f"
+    },
+    {
+      "path": "scripts/sir-david-work-window-ui.test.mjs",
+      "sha256": "0a7f64c209b34c34fc073e0bc025f44a5649c43a32e0a064e3d3f7d08e54750a"
+    },
+    {
+      "path": "scripts/sir-david-work-windows.test.mjs",
+      "sha256": "daa65db25d19002dceff9201c048cfb66c243c7fcbda10375bad4760fd7e6b30"
     },
     {
       "path": "scripts/sir-david.test.mjs",
@@ -124,6 +141,10 @@
       "sha256": "056da277062a638d06b1554886a9199d8e1a8c7a47e849c3e3b3bb3e84a49907"
     },
     {
+      "path": "site-migration-012-sir-david-work-windows.sql",
+      "sha256": "6f34cfef109b8633a8e11a01b9990a6cac42577613eca5499a14dc3ca8e70ea8"
+    },
+    {
       "path": "src/site/portal-api.ts",
       "sha256": "13d7fae9fb91ce045a04a6fedcb5ad796b74ea2978056503e47bddd3719b412a"
     },
@@ -141,7 +162,15 @@
     },
     {
       "path": "src/site/sir-david-api.ts",
-      "sha256": "e129f7c1c24d7d6e4a2501370daf1000a0ce26512b6f672bda22ea1980f81b7c"
+      "sha256": "a43261e59b0c655b82ad4be41705c2fa8325f9ac28e1c8e4b92909e7cf89ea00"
+    },
+    {
+      "path": "src/site/sir-david-calendar-dispatch.d.ts",
+      "sha256": "432da1849786e5ea8ef9e0bcd334245b9a6e12fcc5a645aac01068e5fb7cf23c"
+    },
+    {
+      "path": "src/site/sir-david-calendar-dispatch.js",
+      "sha256": "5005f649e4bae7a6444b7f3fc25f6c0f58db98c9990260a13d47f4c2abb0b321"
     },
     {
       "path": "src/site/sir-david-local.ts",
@@ -154,6 +183,10 @@
     {
       "path": "src/site/sir-david-planner.ts",
       "sha256": "d279a1cee9640c0b7d88c6feb6275c5f6da6abb206f893678140f15445c3dfa7"
+    },
+    {
+      "path": "src/site/sir-david-work-windows.ts",
+      "sha256": "617b115ae28c66592a10de220769e85d233d3e5713e64e733b33147056a2c11f"
     },
     {
       "path": "tsconfig.json",
@@ -212,5 +245,27 @@
       "Only the newest refresh may replace the snapshot",
       "Await observable audio completion in the existing chunked playback test"
     ]
+  },
+  "workWindowsSync": {
+    "hostPr": 307,
+    "hostCommit": "3be3457816ffa26a85d86f39d00c7031a52183c2",
+    "hostMainChecked": "ae33bfecc6323d52480e8871b7d70617d373ac7e",
+    "hostMigration012Sha256": "6f34cfef109b8633a8e11a01b9990a6cac42577613eca5499a14dc3ca8e70ea8",
+    "exportOnly": [
+      "src/site/sir-david-calendar-dispatch.js",
+      "scripts/sir-david-calendar-dispatch.test.mjs"
+    ],
+    "adapted": [
+      "scripts/sir-david-work-windows.test.mjs"
+    ],
+    "validation": {
+      "webTests": 138,
+      "typecheck": "passed",
+      "build": "passed",
+      "adapterTests": 10,
+      "liveModelRequests": 0,
+      "liveTtsRequests": 0,
+      "productionBooking": "not tested"
+    }
   }
 }

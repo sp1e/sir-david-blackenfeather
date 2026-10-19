@@ -2,6 +2,7 @@ import { assertPortalOrigin, PortalError, requirePortalAdmin, type PortalEnv } f
 import { cancelLocalTurn, commitLocalTurn, prepareLocalTurn } from './sir-david-local';
 import { plannerSnapshot, savePlanner, claimReminder, acknowledgeReminder, snoozeReminder, planningContext } from './sir-david-planner';
 import { outlookStatus, outlookConnect, outlookCallback, outlookDisconnect, outlookSync, type OutlookEnv } from './sir-david-outlook';
+import { workWindowSettings, proposeWorkWindows, decideWorkWindow } from './sir-david-work-windows';
 
 interface SirDavidEnv extends OutlookEnv {
   OLLAMA_API_KEY?: string;
@@ -106,7 +107,7 @@ async function providerJob(env: SirDavidEnv, owner: string, kind: string, action
   try { await reserve(env, owner, kind); return await action(); }
   finally { await env.DB.prepare('DELETE FROM site_companion_leases WHERE owner_id=? AND kind=? AND token=?').bind(owner, kind, token).run(); }
 }
-export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, route: string): Promise<Response> {
+export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, route: string, dispatch?: (request:Request)=>Promise<Response>): Promise<Response> {
   try {
     const session = await requirePortalAdmin(request, env);
     // Microsoft returns a top-level cross-site GET. A one-use OAuth state is
@@ -116,6 +117,15 @@ export async function handleSirDavidRequest(request: Request, env: SirDavidEnv, 
     if (request.headers.has('Origin') || !['GET', 'HEAD'].includes(request.method)) assertPortalOrigin(request);
     if (request.headers.get('sec-fetch-site') === 'cross-site') throw new PortalError(403, 'Anropet är inte tillåtet.');
     const owner = session.profileId;
+    if (route === 'planner/work-windows' && request.method === 'GET') return json(await workWindowSettings(env,session));
+    if (route === 'planner/work-windows' && request.method === 'POST') {
+      const input=await body(request,['projectId','date','settings']);
+      return json(await proposeWorkWindows(request,env,session,input,dispatch));
+    }
+    if (route === 'planner/work-windows/decision' && request.method === 'POST') {
+      const input=await body(request,['projectId','date','settings','basis','start','end','decision']);
+      return json(await decideWorkWindow(request,env,session,input,dispatch));
+    }
     if (route === 'planner' && request.method === 'GET') return json({ planner: await plannerSnapshot(env, owner) });
     if (route === 'planner' && request.method === 'PUT') {
       const input = await body(request, ['document', 'version']);
